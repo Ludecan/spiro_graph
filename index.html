@@ -95,9 +95,9 @@
     font-size: 11px; letter-spacing: 0.6px; text-transform: uppercase; color: var(--muted);
   }
   .field .lbl b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
-  #msField { opacity: .35; transition: opacity .25s; }
-  #msField.live { opacity: 1; }
-  #msField:not(.live) { display: none; }
+  #msField, #fdField { opacity: .35; transition: opacity .25s; }
+  #msField.live, #fdField.live { opacity: 1; }
+  #msField:not(.live), #fdField:not(.live) { display: none; }
 
   input[type="range"] {
     -webkit-appearance: none; appearance: none; width: 100%; height: 16px;
@@ -135,8 +135,16 @@
 
   /* switch */
   .switch { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--muted); cursor: pointer; user-select: none; }
+  .switch input[type="checkbox"] { display: none; }
+  .switch .pickwrap { margin-left: auto; display: flex; gap: 6px; }
+  input[type="color"] {
+    width: 27px; height: 20px; padding: 0; background: transparent; cursor: pointer;
+    border: 1px solid rgba(255,255,255,.25); border-radius: 6px;
+  }
+  input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+  input[type="color"]::-webkit-color-swatch { border: none; border-radius: 4px; }
+  input[type="color"]::-moz-color-swatch { border: none; border-radius: 4px; }
   .switches { display: flex; flex-direction: column; gap: 9px; }
-  .switch input { display: none; }
   .switch i {
     width: 34px; height: 19px; border-radius: 20px; background: rgba(255,255,255,.13);
     position: relative; transition: .25s; flex: none;
@@ -233,6 +241,12 @@
     <div class="field"><span class="lbl">Wobble freq <b id="vwf"></b></span>
       <input type="range" id="wf" min="1" max="12" step="1"></div>
   </div>
+  <div class="grid2">
+    <div class="field"><span class="lbl">Mirror ×<b id="vmir"></b></span>
+      <input type="range" id="mirror" min="1" max="12" step="1"></div>
+    <div class="field"><span class="lbl">Spin <b id="vspn"></b></span>
+      <input type="range" id="spin" min="-1.5" max="1.5" step="0.1"></div>
+  </div>
 
   <hr>
 
@@ -253,10 +267,16 @@
 
   <div class="switches">
     <label class="switch"><input type="checkbox" id="fade"><i></i>Fade trails (endless loop)</label>
+    <div class="field" id="fdField"><span class="lbl">Trail length <b id="vfd"></b></span>
+      <input type="range" id="fd" min="0.5" max="20" step="0.5"></div>
     <label class="switch"><input type="checkbox" id="keep"><i></i>Free draw (never resets)</label>
     <label class="switch"><input type="checkbox" id="morph"><i></i>Auto-morph (drifting shapes)</label>
     <div class="field" id="msField"><span class="lbl">Morph speed <b id="vms"></b></span>
       <input type="range" id="ms" min="0.2" max="4" step="0.1"></div>
+    <label class="switch"><input type="checkbox" id="twin"><i></i>Twin pen (opposite side)</label>
+    <label class="switch"><input type="checkbox" id="c2"><i></i>Two colors
+      <span class="pickwrap"><input type="color" id="ca" value="#7c6cff"><input type="color" id="cb" value="#22d3ee"></span>
+    </label>
   </div>
 
   <hr>
@@ -267,7 +287,8 @@
     <button id="rand">🎲 Random</button>
     <button id="ff">⏩ Finish</button>
     <button id="save">💾 PNG</button>
-    <button id="rec" class="span2">⏺ Rec</button>
+    <button id="rec">⏺ Rec</button>
+    <button id="link">🔗 Link</button>
   </div>
 
   <select id="presets">
@@ -276,7 +297,7 @@
 
   <div class="stat"><div class="bar"><i id="bar"></i></div><span id="stat"></span></div>
 
-  <footer><kbd>Space</kbd> play · <kbd>R</kbd> random · <kbd>M</kbd> morph · <kbd>C</kbd> clear · <kbd>H</kbd> hide</footer>
+  <footer><kbd>Space</kbd> play · <kbd>R</kbd> random · <kbd>M</kbd> morph · <kbd>C</kbd> clear · <kbd>L</kbd> link · <kbd>H</kbd> hide</footer>
 </aside>
 
 <main id="stage">
@@ -304,6 +325,13 @@ const S = {
   width: 1.6,    // core stroke width
   hueSpeed: 2.4, // rainbow rate (0 = fixed color)
   glow: 4,       // neon halo strength
+  mirror: 1,     // kaleidoscope: rotational copies drawn (1 = off)
+  spin: 0,       // global swirl: radians of rotation per radian drawn
+  twin: false,   // twin pen on the opposite side of the planet
+  c2: false,     // two-color mode (mix A/B instead of rainbow hue)
+  colA: '#7c6cff',
+  colB: '#22d3ee',
+  fadeRate: 5.5, // fade strength % when trails are on
   fade: false,   // fading trails
   keep: false,   // free draw: parameter changes never clear the canvas
   morph: false,  // auto-morph: parameters drift over time
@@ -321,6 +349,8 @@ const PRESETS = [
   { name: 'Tiny Gears',     mode:'hypo', R:300, r:47,  d:40,  wob:0,   wf:4, hue:40,  hs:3,   g:3,   w:1.2 },
   { name: 'Jelly Bloom',    mode:'hypo', R:260, r:83,  d:120, wob:75,  wf:5, hue:320, hs:3,   g:5,   w:1.5 },
   { name: 'Wobble Worm',    mode:'epi',  R:150, r:95,  d:170, wob:110, wf:3, hue:110, hs:4,   g:4.5, w:1.3 },
+  { name: 'Mirror Mandala', mode:'hypo', R:220, r:77,  d:130, wob:0,   wf:4, hue:210, hs:2,   g:4,   w:1.4, mir:6, sn:0.12 },
+  { name: 'Twin Nebula',    mode:'hypo', R:260, r:97,  d:150, wob:0,   wf:4, hue:265, hs:2.8, g:5,   w:1.5, tw:true },
 ];
 
 /* ============================ canvas setup ============================ */
@@ -360,16 +390,57 @@ function computeFit() {
   cx = W / 2; cy = H / 2;
 }
 
-// curve point at angle t; ta = unwrapped time driving the wobble phase
+// curve point at angle t; ta = unwrapped time driving wobble phase + spin swirl
 function pt(t, ta) {
   const k = (S.mode === 'epi' ? S.R + S.r : S.R - S.r);
   const q = k / S.r;
   const rho = S.d + S.wob * Math.sin(S.wf * ta);
   const c = Math.cos(t), s = Math.sin(t);
   const qc = Math.cos(q * t), qs = Math.sin(q * t);
-  const x = S.mode === 'epi' ? k * c - rho * qc : k * c + rho * qc;
-  const y = k * s - rho * qs;
+  let x = S.mode === 'epi' ? k * c - rho * qc : k * c + rho * qc;
+  let y = k * s - rho * qs;
+  if (S.spin) { // drawing on a spinning turntable
+    const a = S.spin * ta, ca = Math.cos(a), sa = Math.sin(a);
+    const xr = x * ca - y * sa;
+    y = x * sa + y * ca; x = xr;
+  }
   return [cx + x * sc, cy + y * sc];
+}
+
+// twin pen: same planet, opposite side (offset vector negated)
+function ptTwin(t, ta) {
+  const k = (S.mode === 'epi' ? S.R + S.r : S.R - S.r);
+  const q = k / S.r;
+  const rho = S.d + S.wob * Math.sin(S.wf * ta);
+  const c = Math.cos(t), s = Math.sin(t);
+  const qc = Math.cos(q * t), qs = Math.sin(q * t);
+  let x = S.mode === 'epi' ? k * c + rho * qc : k * c - rho * qc;
+  let y = k * s + rho * qs;
+  if (S.spin) {
+    const a = S.spin * ta, ca = Math.cos(a), sa = Math.sin(a);
+    const xr = x * ca - y * sa;
+    y = x * sa + y * ca; x = xr;
+  }
+  return [cx + x * sc, cy + y * sc];
+}
+
+/* color helpers: rainbow hue or two-color A↔B mix */
+const hex2rgb = (hx) => [parseInt(hx.slice(1, 3), 16), parseInt(hx.slice(3, 5), 16), parseInt(hx.slice(5, 7), 16)];
+function mixRGB(a, b, m) {
+  const A = hex2rgb(a), B = hex2rgb(b);
+  return [Math.round(A[0] + (B[0] - A[0]) * m), Math.round(A[1] + (B[1] - A[1]) * m), Math.round(A[2] + (B[2] - A[2]) * m)];
+}
+function colorSpec(ph, twin) {
+  const ga = 0.04 + S.glow * 0.015;
+  if (S.c2) {
+    let m = 0.5 + 0.5 * Math.sin(ph);
+    if (twin) m = 1 - m; // twin wears the swapped color
+    const [r, g, b] = mixRGB(S.colA, S.colB, m);
+    const wr = Math.round(r + (255 - r) * 0.45), wg = Math.round(g + (255 - g) * 0.45), wb = Math.round(b + (255 - b) * 0.45);
+    return { core: `rgba(${wr},${wg},${wb},0.92)`, glow: `rgba(${r},${g},${b},${ga})` };
+  }
+  const h = ph + (twin ? 45 : 0);
+  return { core: `hsla(${h},100%,74%,0.92)`, glow: `hsla(${h},95%,58%,${ga})` };
 }
 
 function paintBg() {
@@ -384,29 +455,50 @@ function paintBg() {
 }
 
 function fadeFrame() {
-  ctx.globalAlpha = 0.055;
+  ctx.globalAlpha = S.fadeRate / 100; // trail length knob
   paintBg();
   ctx.globalAlpha = 1;
 }
 
 /* ============================ stroke drawing ============================ */
-function strokeChunk(pts, h) {
-  if (pts.length < 2) return;
+function strokeLine(P, sp) {
+  if (P.length < 2) return;
   ctx.beginPath();
-  ctx.moveTo(pts[0][0], pts[0][1]);
-  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.moveTo(P[0][0], P[0][1]);
+  for (let i = 1; i < P.length; i++) ctx.lineTo(P[i][0], P[i][1]);
   if (S.glow > 0) {
-    ctx.strokeStyle = `hsla(${h},95%,58%,${0.04 + S.glow * 0.015})`;
+    ctx.strokeStyle = sp.glow;
     ctx.lineWidth = S.width + S.glow * 2.0;
     ctx.stroke();
   }
-  ctx.strokeStyle = `hsla(${h},100%,74%,0.92)`;
+  ctx.strokeStyle = sp.core;
   ctx.lineWidth = S.width;
   ctx.stroke();
-  lastPt = pts[pts.length - 1];
 }
 
-// draw the curve from angle t0 -> t1, advancing hue and wobble phase along the way
+// rotate a point set around the stage center (kaleidoscope slices; odd slices mirrored)
+function mirrorPts(P, a, flip) {
+  const ca = Math.cos(a), sa = Math.sin(a), out = [];
+  for (const [x0, y0] of P) {
+    const px = x0 - cx, py = flip ? cy - y0 : y0 - cy;
+    out.push([cx + px * ca - py * sa, cy + px * sa + py * ca]);
+  }
+  return out;
+}
+
+function strokeChunk(pts, pts2, ph) {
+  lastPt = pts[pts.length - 1];
+  const N = S.mirror > 1 ? S.mirror : 1;
+  const spA = colorSpec(ph, false);
+  const spB = pts2 && pts2.length ? colorSpec(ph, true) : null;
+  for (let k = 0; k < N; k++) {
+    const a = k * TAU / N, flip = (k & 1) === 1;
+    strokeLine(N === 1 ? pts : mirrorPts(pts, a, flip), spA);
+    if (spB) strokeLine(N === 1 ? pts2 : mirrorPts(pts2, a, flip), spB);
+  }
+}
+
+// draw the curve from angle t0 -> t1, advancing hue, wobble phase and spin along the way
 function strokeSeg(t0, t1) {
   if (t1 <= t0) return;
   computeFit(); // fresh transform every stroke: shape always fits the viewport
@@ -418,21 +510,29 @@ function strokeSeg(t0, t1) {
   ctx.globalCompositeOperation = 'lighter';
   ctx.lineCap = ctx.lineJoin = 'round';
 
+  const twin = S.twin, c2 = S.c2;
+  const breakTh = c2 ? 0.28 : 3; // color-chunk granularity per mode
+  const phase = () => (c2 ? S.hueSpeed * tAbs * 0.6 : hue);
+
   let pts = [cont ? [lastPt[0], lastPt[1]] : pt(t0, tAbs)];
-  let t = t0, hAnchor = hue;
+  let pts2 = twin ? [ptTwin(t0, tAbs)] : null;
+  let t = t0, phAnchor = phase();
   while (t < t1) {
     const nt = Math.min(t1, t + maxStep);
     hue += S.hueSpeed * (nt - t) * 8;
     tAbs += nt - t;
     t = nt;
     pts.push(pt(t, tAbs));
-    if (Math.abs(hue - hAnchor) >= 3 && t < t1) {
-      strokeChunk(pts, (hAnchor + hue) / 2);
+    if (twin) pts2.push(ptTwin(t, tAbs));
+    const ph = phase();
+    if (Math.abs(ph - phAnchor) >= breakTh && t < t1) {
+      strokeChunk(pts, pts2, (phAnchor + ph) / 2);
       pts = [pts[pts.length - 1]];
-      hAnchor = hue;
+      if (twin) pts2 = [pts2[pts2.length - 1]];
+      phAnchor = ph;
     }
   }
-  strokeChunk(pts, (hAnchor + hue) / 2);
+  strokeChunk(pts, pts2, phase());
 }
 
 // instant redraw of everything from 0 -> tEnd (after resize)
@@ -566,7 +666,7 @@ function drawDot(now) {
   const pulse = 5 + Math.sin(now / 160) * 2;
   octx.globalCompositeOperation = 'lighter';
   const g = octx.createRadialGradient(x, y, 0, x, y, pulse * 4);
-  g.addColorStop(0, `hsla(${hue},100%,82%,0.95)`);
+  g.addColorStop(0, colorSpec(S.c2 ? S.hueSpeed * tAbs * 0.6 : hue, false).core);
   g.addColorStop(1, 'hsla(0,0%,0%,0)');
   octx.fillStyle = g;
   octx.beginPath();
@@ -577,9 +677,10 @@ function drawDot(now) {
 /* ================================ UI ================================ */
 const $ = (id) => document.getElementById(id);
 const badge = $('badge');
-const sliders = ['R','r','d','wob','wf','sp','w','hs','g','ms'];
-const toggles = ['fade','keep','morph'];
-const inputs = [...sliders, ...toggles];
+const sliders = ['R','r','d','wob','wf','mirror','spin','sp','w','hs','g','ms','fd'];
+const toggles = ['fade','keep','morph','twin','c2'];
+const colors = ['ca','cb'];
+const inputs = [...sliders, ...toggles, ...colors];
 
 function syncFills() {
   for (const id of sliders) {
@@ -591,24 +692,32 @@ function syncFills() {
 
 // returns true if any geometry parameter changed
 function readUI() {
-  const prev = { R: S.R, r: S.r, d: S.d, wob: S.wob, wf: S.wf, mode: S.mode };
+  const prev = { R: S.R, r: S.r, d: S.d, wob: S.wob, wf: S.wf, mode: S.mode, mirror: S.mirror, spin: S.spin };
   S.R = +$('R').value; S.r = +$('r').value; S.d = +$('d').value;
   S.wob = +$('wob').value; S.wf = +$('wf').value;
+  S.mirror = +$('mirror').value; S.spin = +$('spin').value;
   S.speed = +$('sp').value; S.width = +$('w').value;
   S.hueSpeed = +$('hs').value; S.glow = +$('g').value;
-  S.morphSpeed = +$('ms').value;
+  S.morphSpeed = +$('ms').value; S.fadeRate = +$('fd').value;
   S.fade = $('fade').checked; S.keep = $('keep').checked; S.morph = $('morph').checked;
-  return prev.R !== S.R || prev.r !== S.r || prev.d !== S.d ||
-         prev.wob !== S.wob || prev.wf !== S.wf || prev.mode !== S.mode;
+  S.twin = $('twin').checked; S.c2 = $('c2').checked;
+  S.colA = $('ca').value; S.colB = $('cb').value;
+  return prev.R !== S.R || prev.r !== S.r || prev.d !== S.d || prev.wob !== S.wob ||
+         prev.wf !== S.wf || prev.mode !== S.mode || prev.mirror !== S.mirror || prev.spin !== S.spin;
 }
 
 function writeUI() {
   $('R').value = S.R; $('r').value = S.r; $('d').value = S.d;
   $('wob').value = S.wob; $('wf').value = S.wf;
+  $('mirror').value = S.mirror; $('spin').value = S.spin;
   $('sp').value = S.speed; $('w').value = S.width;
   $('hs').value = S.hueSpeed; $('g').value = S.glow; $('ms').value = S.morphSpeed;
+  $('fd').value = S.fadeRate;
   $('fade').checked = S.fade; $('keep').checked = S.keep; $('morph').checked = S.morph;
+  $('twin').checked = S.twin; $('c2').checked = S.c2;
+  $('ca').value = S.colA; $('cb').value = S.colB;
   $('msField').classList.toggle('live', S.morph);
+  $('fdField').classList.toggle('live', S.fade);
   for (const b of $('mode').children) b.classList.toggle('on', b.dataset.mode === S.mode);
   syncFills();
 }
@@ -619,19 +728,23 @@ function labels() {
   $('vd').textContent = Math.round(+$('d').value);
   $('vwob').textContent = Math.round(+$('wob').value);
   $('vwf').textContent = $('wf').value;
+  $('vmir').textContent = $('mirror').value;
+  $('vspn').textContent = (+$('spin').value).toFixed(1);
   $('vsp').textContent = (+$('sp').value).toFixed(1);
   $('vw').textContent = (+$('w').value).toFixed(1);
   $('vhs').textContent = (+$('hs').value).toFixed(1);
   $('vg').textContent = (+$('g').value).toFixed(1);
   $('vms').textContent = (+$('ms').value).toFixed(1);
+  $('vfd').textContent = (+$('fd').value).toFixed(1);
 }
 
 function pushHash() {
   const p = new URLSearchParams({
     m: S.mode, R: Math.round(S.R), r: Math.round(S.r), d: Math.round(S.d),
-    wob: S.wob, wf: S.wf, sp: S.speed, w: S.width,
-    hs: S.hueSpeed, g: S.glow, ms: S.morphSpeed, h: Math.round(hue0),
+    wob: S.wob, wf: S.wf, mir: S.mirror, sn: S.spin, sp: S.speed, w: S.width,
+    hs: S.hueSpeed, g: S.glow, ms: S.morphSpeed, fd: S.fadeRate, h: Math.round(hue0),
     ...(S.fade ? { f: 1 } : {}), ...(S.keep ? { k: 1 } : {}), ...(S.morph ? { mo: 1 } : {}),
+    ...(S.twin ? { tw: 1 } : {}), ...(S.c2 ? { c2: 1, ca: S.colA.slice(1), cb: S.colB.slice(1) } : {}),
   });
   history.replaceState(null, '', '#' + p);
 }
@@ -656,12 +769,15 @@ function checkImmediateDone() {
   }
 }
 
+// changes that only affect future strokes (no restart, no connector)
+const STYLE_ONLY = new Set(['sp', 'w', 'hs', 'g', 'ms', 'fd', 'twin', 'c2', 'ca', 'cb']);
+
 for (const id of inputs) {
   $(id).addEventListener('input', () => {
     const shapeChanged = readUI();
     labels(); syncFills(); scheduleHash();
-    if (id === 'fade') { restart(); return; }
-    if (id === 'ms') return;
+    if (id === 'fade') { $('fdField').classList.toggle('live', S.fade); restart(); return; }
+    if (STYLE_ONLY.has(id)) return;
     if (shapeChanged) onShapeChanged();
   });
 }
@@ -706,6 +822,9 @@ function randomize() {
   S.d = ri(12, 300);
   S.wob = Math.random() < 0.5 ? 0 : ri(20, 120);
   S.wf = ri(2, 9);
+  S.mirror = Math.random() < 0.25 ? ri(2, 8) : 1;
+  S.spin = Math.random() < 0.2 ? +(Math.random() * 0.5 - 0.25).toFixed(1) : 0;
+  S.twin = Math.random() < 0.3;
   S.hueSpeed = +(1 + Math.random() * 4).toFixed(1);
   S.glow = +(2 + Math.random() * 6).toFixed(1);
   S.width = +(1 + Math.random() * 1.4).toFixed(1);
@@ -718,6 +837,23 @@ $('save').addEventListener('click', () => {
   a.download = `spirograph-${S.mode}-${Math.round(S.R)}x${Math.round(S.r)}x${Math.round(S.d)}.png`;
   a.href = cv.toDataURL('image/png');
   a.click();
+});
+
+$('link').addEventListener('click', async () => {
+  pushHash(); // bake the current look into the URL first
+  const url = location.href;
+  let ok = false;
+  try { await navigator.clipboard.writeText(url); ok = true; }
+  catch {
+    const ta = document.createElement('textarea');
+    ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { ok = document.execCommand('copy'); } catch {}
+    ta.remove();
+  }
+  const b = $('link');
+  b.textContent = ok ? '✅ Copied!' : '❌ Failed';
+  setTimeout(() => { b.textContent = '🔗 Link'; }, 1400);
 });
 
 /* ------------------------------ recorder ------------------------------ */
@@ -767,6 +903,7 @@ sel.addEventListener('change', () => {
   if (!p) return;
   Object.assign(S, { mode: p.mode, R: p.R, r: p.r, d: p.d, wob: p.wob, wf: p.wf,
                      hueSpeed: p.hs, glow: p.g, width: p.w });
+  S.mirror = p.mir ?? 1; S.spin = p.sn ?? 0; S.twin = !!p.tw;
   hue0 = p.hue;
   sel.value = '';
   writeUI(); labels(); scheduleHash(); restart();
@@ -793,6 +930,7 @@ addEventListener('keydown', (e) => {
     m.dispatchEvent(new Event('change'));
   }
   else if (e.code === 'KeyC') restart();
+  else if (e.code === 'KeyL') $('link').click();
   else if (e.code === 'KeyH') togglePanel();
 });
 
@@ -820,10 +958,17 @@ function loadHash() {
   if (p.get('m') === 'epi' || p.get('m') === 'hypo') S.mode = p.get('m');
   S.R = num('R', S.R); S.r = num('r', S.r); S.d = num('d', S.d);
   S.wob = num('wob', S.wob); S.wf = num('wf', S.wf);
+  S.mirror = num('mir', S.mirror); S.spin = num('sn', S.spin);
   S.speed = num('sp', S.speed); S.width = num('w', S.width);
   S.hueSpeed = num('hs', S.hueSpeed); S.glow = num('g', S.glow);
-  S.morphSpeed = num('ms', S.morphSpeed);
-  S.fade = p.has('f'); S.keep = p.has('k'); S.morph = p.has('mo');
+  S.morphSpeed = num('ms', S.morphSpeed); S.fadeRate = num('fd', S.fadeRate);
+  S.fade = p.has('f'); S.keep = p.has('k'); S.morph = p.has('mo'); S.twin = p.has('tw');
+  if (p.has('c2')) {
+    S.c2 = true;
+    const hex = (v) => (/^[0-9a-fA-F]{6}$/.test(v) ? '#' + v : null);
+    S.colA = hex(p.get('ca')) || S.colA;
+    S.colB = hex(p.get('cb')) || S.colB;
+  }
   hue0 = num('h', hue0);
 }
 
