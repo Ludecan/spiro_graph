@@ -226,6 +226,25 @@ els.link.click();
 if (!/lk=g%2CR%2Cmirror/.test(pushedUrl)) throw new Error('hash missing locks: ' + pushedUrl);
 console.log('locks: persisted in hash ✓');
 
+// 12d) engine toggles are lockable: Random keeps them locked, rolls them when free
+globalThis.__set({ fade: true, fadeGlow: false, keep: true, morph: false });
+for (const id of ['fade','fglow','keep','morph']) globalThis.__locks().add(id);
+const engOf = () => { const q = globalThis.__probe().S; return [q.fade, q.fadeGlow, q.keep, q.morph].join(); };
+const eng0 = engOf();
+for (let i = 0; i < 40; i++) globalThis.__randomize();
+if (engOf() !== eng0) throw new Error('randomize changed locked engine toggles: ' + eng0 + ' -> ' + engOf());
+console.log('locks: engine toggles kept ✓');
+for (const id of ['fade','fglow','keep','morph']) globalThis.__locks().delete(id);
+let sawFade = false, sawMorph = false;
+for (let i = 0; i < 300 && !(sawFade && sawMorph); i++) {
+  globalThis.__randomize();
+  const q = globalThis.__probe().S;
+  if (q.fade) sawFade = true;
+  if (q.morph) sawMorph = true;
+}
+if (!sawFade || !sawMorph) throw new Error('unlocked engines should be rollable by Random');
+console.log('engine toggles: randomizable when unlocked ✓');
+
 setTimeout(() => {
   if (!clipUrl || !/ca=ff0000/.test(clipUrl)) throw new Error('clipboard never received the URL');
   console.log('clipboard received URL ✓');

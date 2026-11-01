@@ -79,10 +79,11 @@ sliders; `fade fglow keep morph twin c2` toggles; `ca cb` color pickers;
 floating overlay below 720px. Keyboard: `Space R M C L H`.
 
 **Locks (🔒):** `locks` Set keyed by control id; hover-revealed padlock buttons
-(`.lock[data-lock]`); `isLocked()` gates **Random** (`randomize()` re-rolls only
-unlocked, incl. a harmonious random color pair) and **Auto-morph drift**.
-Persisted as `lk=a,b,c` in the URL hash. *Currently missing on the engine
-toggles (fade/fglow/keep/morph) — known gap.*
+(`.lock[data-lock]`); `isLocked()` gates **Random** and **Auto-morph drift**.
+Every control is lockable — sliders, mode, color pair, and the engine toggles
+(fade/fglow/keep/morph, which Random rolls with low odds ~10–35% when
+unlocked). Locks persist as `lk=a,b,c` in the URL hash. Locks protect from the
+*machine* only: users can always toggle/move a locked control by hand.
 
 ### URL hash = full shareable state
 `#m=&R=&r=&d=&wob=&wf=&mir=&sn=&sp=&w=&hs=&g=&ms=&fd=&h=&f=&fg=&k=&mo=&tw=&c2=&ca=&cb=&lk=`
@@ -117,7 +118,7 @@ with hex validation for colors.
   `~/.ssh/config` pins it for `github.com` with `IdentitiesOnly`).
 
 ## Roadmap / open items
-- [ ] Locks for the engine toggles (fade, fade glow, free draw, auto-morph)
+- [x] Locks for the engine toggles (fade, fade glow, free draw, auto-morph)
 - [ ] Zoom & pan; custom presets (localStorage); dashed/pulse pens
 - [ ] SVG export; "harmonic" second-epicycle pen
 - [ ] GitHub Pages + repo description/topics (curl commands known)
