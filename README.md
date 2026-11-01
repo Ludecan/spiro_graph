@@ -16,7 +16,7 @@ https://github.com/user-attachments/assets/placeholder-video-or-screenshot
 - **Twin pen** — a second pen on the opposite side of the planet, drawing an interlocking twin curve
 - **Auto-morph** — parameters drift on slow LFOs + noise; watch shapes melt into each other forever
 - **Free draw** — never-resets mode: tweak geometry mid-curve and the pen keeps drawing from where it is
-- **Fade trails** — adjustable trail length: subtle ghosting to full comet tails; with morph, an infinite lava-lamp screensaver
+- **Fade trails / fade glow** — independent controls: comet mode with adjustable trail length, or "glow-only" fade where the soft aura dissolves while your colored trail stays permanently inked
 - **Two-color mode** — cross-fade between any two picked colors instead of the full rainbow
 - **Progress & completion** — live "closes in ~N laps" hint, and an instant **⏩ Finish** fast-forward
 - **Presets & randomizer** — curated starting shapes, or 🎲 one-shot chaos
@@ -52,8 +52,9 @@ Or serve it: `python3 -m http.server` → http://localhost:8000
 | Line width | core stroke thickness |
 | Color shift | rainbow hue rate (0 = fixed color) |
 | Glow | neon halo strength |
-| Fade trails | endless loop with comet tails |
-| Trail length | how long the trails linger (with fade on) |
+| Fade trails | comet mode — everything dissolves, endless loop |
+| Fade glow | aura dissolves, colored trail stays permanently inked |
+| Trail length | fade speed, drives both layers |
 | Free draw | parameter changes continue on the same canvas |
 | Auto-morph (+ speed) | parameters drift and shapes mutate live |
 | Twin pen | a second pen on the planet's opposite side |
@@ -70,7 +71,7 @@ hypo:  x = (R−r)·cos t + d·cos(((R−r)/r)·t)     y = (R−r)·sin t − d�
 epi:   x = (R+r)·cos t − d·cos(((R+r)/r)·t)     y = (R+r)·sin t − d·sin(((R+r)/r)·t)
 ```
 
-A curve closes after **`r / gcd(R, r)`** laps — that's why coprime radii take ages, and how the progress hint and ⏩ Finish know when they're done. Strokes are drawn incrementally with adaptive step sizes (so even extreme gear ratios stay smooth) onto a persistent canvas with `globalCompositeOperation: "lighter"` for the neon look. The view transform is recomputed at stroke time, so the figure always fits the stage.
+A curve closes after **`r / gcd(R, r)`** laps — that's why coprime radii take ages, and how the progress hint and ⏩ Finish know when they're done. Strokes are drawn incrementally with adaptive step sizes (so even extreme gear ratios stay smooth) with `globalCompositeOperation: "lighter"` for the neon look. The renderer is **three stacked canvas layers** — permanent *ink* (colored core strokes), a screen-blended *glow* layer (halos, dissolvable via `destination-out` shaving), and a per-frame *dot* layer for the live pen tip — so the aura can fade away without ever touching the trail. PNG and video exports composite all three layers. The view transform is recomputed at stroke time, so the figure always fits the stage.
 
 ## Tech
 

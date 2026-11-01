@@ -28,11 +28,14 @@
      explicit 100% size prevents it rendering at intrinsic (dpr-scaled) size */
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   #main { z-index: 0; }
-  #overlay { z-index: 1; pointer-events: none; }
+  /* glow layer: halo, screen-blended over the ink canvas so it fades independently */
+  #glow { z-index: 1; pointer-events: none; mix-blend-mode: screen; }
+  /* dot layer: just the live pen tip, re-cleared every frame */
+  #dot { z-index: 2; pointer-events: none; mix-blend-mode: screen; }
 
   /* decorative blobs floating over the art */
   .blob {
-    position: absolute; z-index: 2; pointer-events: none;
+    position: absolute; z-index: 3; pointer-events: none;
     border-radius: 50%; filter: blur(90px); mix-blend-mode: screen; opacity: .16;
     animation: drift 14s ease-in-out infinite alternate;
   }
@@ -282,6 +285,7 @@
 
   <div class="switches">
     <label class="switch"><input type="checkbox" id="fade"><i></i>Fade trails (endless loop)</label>
+    <label class="switch"><input type="checkbox" id="fglow"><i></i>Fade glow (trail stays inked)</label>
     <div class="field" id="fdField"><span class="lbl">Trail length <span class="rv"><b id="vfd"></b><button class="lock" data-lock="fd" title="Lock — kept through Random">🔓</button></span></span>
       <input type="range" id="fd" min="0.5" max="20" step="0.5"></div>
     <label class="switch"><input type="checkbox" id="keep"><i></i>Free draw (never resets)</label>
@@ -322,7 +326,8 @@
 
 <main id="stage">
   <canvas id="main"></canvas>
-  <canvas id="overlay"></canvas>
+  <canvas id="glow"></canvas>
+  <canvas id="dot"></canvas>
   <div class="blob a"></div>
   <div class="blob b"></div>
   <div id="badge"></div>
@@ -351,8 +356,9 @@ const S = {
   c2: false,     // two-color mode (mix A/B instead of rainbow hue)
   colA: '#7c6cff',
   colB: '#22d3ee',
-  fadeRate: 5.5, // fade strength % when trails are on
-  fade: false,   // fading trails
+  fadeRate: 5.5, // fade strength % when trails/glow are fading
+  fade: false,   // fading trails (ink comet)
+  fadeGlow: false, // halo + pen dot dissolve, colored trail stays
   keep: false,   // free draw: parameter changes never clear the canvas
   morph: false,  // auto-morph: parameters drift over time
   morphSpeed: 1, // drift rate
@@ -374,8 +380,9 @@ const PRESETS = [
 ];
 
 /* ============================ canvas setup ============================ */
-const cv = document.getElementById('main'), ctx = cv.getContext('2d');
-const ov = document.getElementById('overlay'), octx = ov.getContext('2d');
+const cv = document.getElementById('main'), ctx = cv.getContext('2d');   // ink layer
+const gcv = document.getElementById('glow'), gctx = gcv.getContext('2d'); // glow layer
+const dcv = document.getElementById('dot'), dctx = dcv.getContext('2d'); // live pen tip layer
 const stage = document.getElementById('stage');
 let W = 0, H = 0, cx = 0, cy = 0, sc = 1; // css-pixel viewport + transform
 
@@ -489,17 +496,30 @@ function fadeFrame() {
   ctx.globalAlpha = 1;
 }
 
+// dissolve the glow layer by shaving its alpha each frame (ink canvas untouched)
+function glowFade() {
+  gctx.globalCompositeOperation = 'destination-out';
+  gctx.fillStyle = `rgba(0,0,0,${S.fadeRate / 100})`;
+  gctx.fillRect(0, 0, W, H);
+  gctx.globalCompositeOperation = 'lighter';
+}
+
 /* ============================ stroke drawing ============================ */
+function tracePath(c, P) {
+  c.beginPath();
+  c.moveTo(P[0][0], P[0][1]);
+  for (let i = 1; i < P.length; i++) c.lineTo(P[i][0], P[i][1]);
+}
+
 function strokeLine(P, sp) {
   if (P.length < 2) return;
-  ctx.beginPath();
-  ctx.moveTo(P[0][0], P[0][1]);
-  for (let i = 1; i < P.length; i++) ctx.lineTo(P[i][0], P[i][1]);
-  if (S.glow > 0) {
-    ctx.strokeStyle = sp.glow;
-    ctx.lineWidth = S.width + S.glow * 2.0;
-    ctx.stroke();
+  if (S.glow > 0) { // halo lives on the glow layer
+    tracePath(gctx, P);
+    gctx.strokeStyle = sp.glow;
+    gctx.lineWidth = S.width + S.glow * 2.0;
+    gctx.stroke();
   }
+  tracePath(ctx, P); // colored core is permanent ink
   ctx.strokeStyle = sp.core;
   ctx.lineWidth = S.width;
   ctx.stroke();
@@ -538,6 +558,8 @@ function strokeSeg(t0, t1) {
   const maxStep = Math.min(0.02, 0.05 / q); // keep pen-arm rotation per step small
   ctx.globalCompositeOperation = 'lighter';
   ctx.lineCap = ctx.lineJoin = 'round';
+  gctx.globalCompositeOperation = 'lighter';
+  gctx.lineCap = gctx.lineJoin = 'round';
 
   const twin = S.twin, c2 = S.c2;
   const breakTh = c2 ? 0.28 : 3; // color-chunk granularity per mode
@@ -571,12 +593,14 @@ function redrawTo(tEnd) {
   tAbs = 0;
   hue = hue0;
   lastPt = null;
+  gctx.clearRect(0, 0, W, H);
   strokeSeg(0, tEnd);
 }
 
 function restart(t0 = 0) {
   computeFit();
   paintBg();
+  gctx.clearRect(0, 0, W, H);
   tCur = t0;
   tAbs = t0;
   hue = hue0 + S.hueSpeed * 8 * t0;
@@ -655,33 +679,36 @@ function frame(now) {
   const dt = Math.min(0.05, (now - lastFrame) / 1000) || 0;
   lastFrame = now;
 
-  if (S.playing && !done) {
-    if (S.morph) morphStep(now, dt);
-    const T = tMax();
+  if (S.playing) {
     if (S.fade) fadeFrame();
-    const endless = S.fade || S.keep || S.morph; // wrap forever instead of stopping at closure
-    let t0 = tCur, target = tCur + S.speed * dt, guard = 0;
-    let closed = false;
-    while (guard++ < 24) {
-      if (endless) {
-        if (target <= T) { strokeSeg(t0, target); tCur = target; break; }
-        strokeSeg(t0, T);
-        target -= T; t0 = 0;
-        if (!S.morph && !S.fade) { // free-draw without param changes re-traces a closed curve — stop to avoid blow-out
-          if (paramSeq === lastWrapSeq) { closed = true; tCur = 0; break; }
-          lastWrapSeq = paramSeq;
+    if (S.fade || S.fadeGlow) glowFade(); // aura keeps dissolving even once done
+    if (!done) {
+      if (S.morph) morphStep(now, dt);
+      const T = tMax();
+      const endless = S.fade || S.keep || S.morph; // wrap forever instead of stopping at closure
+      let t0 = tCur, target = tCur + S.speed * dt, guard = 0;
+      let closed = false;
+      while (guard++ < 24) {
+        if (endless) {
+          if (target <= T) { strokeSeg(t0, target); tCur = target; break; }
+          strokeSeg(t0, T);
+          target -= T; t0 = 0;
+          if (!S.morph && !S.fade) { // free-draw without param changes re-traces a closed curve — stop to avoid blow-out
+            if (paramSeq === lastWrapSeq) { closed = true; tCur = 0; break; }
+            lastWrapSeq = paramSeq;
+          }
+        } else {
+          if (target >= T) { strokeSeg(t0, T); tCur = T; closed = true; }
+          else { strokeSeg(t0, target); tCur = target; }
+          break;
         }
-      } else {
-        if (target >= T) { strokeSeg(t0, T); tCur = T; closed = true; }
-        else { strokeSeg(t0, target); tCur = target; }
-        break;
       }
-    }
-    if (closed) {
-      done = true;
-      showBadge(S.keep
-        ? '✦ Curve closed — tweak any slider to keep drawing'
-        : '✦ Curve complete — tweak a slider, hit Random or load a preset');
+      if (closed) {
+        done = true;
+        showBadge(S.keep
+          ? '✦ Curve closed — tweak any slider to keep drawing'
+          : '✦ Curve complete — tweak a slider, hit Random or load a preset');
+      }
     }
   }
   drawDot(now);
@@ -689,25 +716,25 @@ function frame(now) {
 }
 
 function drawDot(now) {
-  octx.clearRect(0, 0, W, H);
+  dctx.clearRect(0, 0, W, H);
   if (!S.playing || done) return;
   const [x, y] = pt(tCur, tAbs);
   const pulse = 5 + Math.sin(now / 160) * 2;
-  octx.globalCompositeOperation = 'lighter';
-  const g = octx.createRadialGradient(x, y, 0, x, y, pulse * 4);
+  dctx.globalCompositeOperation = 'lighter';
+  const g = dctx.createRadialGradient(x, y, 0, x, y, pulse * 4);
   g.addColorStop(0, colorSpec(S.c2 ? S.hueSpeed * tAbs * 0.6 : hue, false).core);
   g.addColorStop(1, 'hsla(0,0%,0%,0)');
-  octx.fillStyle = g;
-  octx.beginPath();
-  octx.arc(x, y, pulse * 4, 0, TAU);
-  octx.fill();
+  dctx.fillStyle = g;
+  dctx.beginPath();
+  dctx.arc(x, y, pulse * 4, 0, TAU);
+  dctx.fill();
 }
 
 /* ================================ UI ================================ */
 const $ = (id) => document.getElementById(id);
 const badge = $('badge');
 const sliders = ['R','r','d','wob','wf','mirror','spin','sp','w','hs','g','ms','fd'];
-const toggles = ['fade','keep','morph','twin','c2'];
+const toggles = ['fade','fglow','keep','morph','twin','c2'];
 const colors = ['ca','cb'];
 const inputs = [...sliders, ...toggles, ...colors];
 
@@ -728,7 +755,8 @@ function readUI() {
   S.speed = +$('sp').value; S.width = +$('w').value;
   S.hueSpeed = +$('hs').value; S.glow = +$('g').value;
   S.morphSpeed = +$('ms').value; S.fadeRate = +$('fd').value;
-  S.fade = $('fade').checked; S.keep = $('keep').checked; S.morph = $('morph').checked;
+  S.fade = $('fade').checked; S.fadeGlow = $('fglow').checked;
+  S.keep = $('keep').checked; S.morph = $('morph').checked;
   S.twin = $('twin').checked; S.c2 = $('c2').checked;
   S.colA = $('ca').value; S.colB = $('cb').value;
   return prev.R !== S.R || prev.r !== S.r || prev.d !== S.d || prev.wob !== S.wob ||
@@ -742,11 +770,12 @@ function writeUI() {
   $('sp').value = S.speed; $('w').value = S.width;
   $('hs').value = S.hueSpeed; $('g').value = S.glow; $('ms').value = S.morphSpeed;
   $('fd').value = S.fadeRate;
-  $('fade').checked = S.fade; $('keep').checked = S.keep; $('morph').checked = S.morph;
+  $('fade').checked = S.fade; $('fglow').checked = S.fadeGlow;
+  $('keep').checked = S.keep; $('morph').checked = S.morph;
   $('twin').checked = S.twin; $('c2').checked = S.c2;
   $('ca').value = S.colA; $('cb').value = S.colB;
   $('msField').classList.toggle('live', S.morph);
-  $('fdField').classList.toggle('live', S.fade);
+  $('fdField').classList.toggle('live', S.fade || S.fadeGlow);
   for (const b of $('mode').children) b.classList.toggle('on', b.dataset.mode === S.mode);
   syncFills();
 }
@@ -772,7 +801,8 @@ function pushHash() {
     m: S.mode, R: Math.round(S.R), r: Math.round(S.r), d: Math.round(S.d),
     wob: S.wob, wf: S.wf, mir: S.mirror, sn: S.spin, sp: S.speed, w: S.width,
     hs: S.hueSpeed, g: S.glow, ms: S.morphSpeed, fd: S.fadeRate, h: Math.round(hue0),
-    ...(S.fade ? { f: 1 } : {}), ...(S.keep ? { k: 1 } : {}), ...(S.morph ? { mo: 1 } : {}),
+    ...(S.fade ? { f: 1 } : {}), ...(S.fadeGlow ? { fg: 1 } : {}),
+    ...(S.keep ? { k: 1 } : {}), ...(S.morph ? { mo: 1 } : {}),
     ...(S.twin ? { tw: 1 } : {}), ...(S.c2 ? { c2: 1, ca: S.colA.slice(1), cb: S.colB.slice(1) } : {}),
     ...(locks.size ? { lk: [...locks].join(',') } : {}),
   });
@@ -831,7 +861,8 @@ for (const id of inputs) {
   $(id).addEventListener('input', () => {
     const shapeChanged = readUI();
     labels(); syncFills(); scheduleHash();
-    if (id === 'fade') { $('fdField').classList.toggle('live', S.fade); restart(); return; }
+    if (id === 'fade') { $('fdField').classList.toggle('live', S.fade || S.fadeGlow); restart(); return; }
+    if (id === 'fglow') { $('fdField').classList.toggle('live', S.fade || S.fadeGlow); return; }
     if (STYLE_ONLY.has(id)) return;
     if (shapeChanged) onShapeChanged();
   });
@@ -899,10 +930,22 @@ function randomize() {
   writeUI(); labels(); scheduleHash(); restart();
 }
 
+// stack the layers (ink + glow + dot) into a fresh canvas, matching the on-screen blend
+function composite() {
+  const c = document.createElement('canvas');
+  c.width = cv.width; c.height = cv.height;
+  const x = c.getContext('2d');
+  x.drawImage(cv, 0, 0);
+  x.globalCompositeOperation = 'screen';
+  x.drawImage(gcv, 0, 0);
+  x.drawImage(dcv, 0, 0);
+  return c;
+}
+
 $('save').addEventListener('click', () => {
   const a = document.createElement('a');
   a.download = `spirograph-${S.mode}-${Math.round(S.R)}x${Math.round(S.r)}x${Math.round(S.d)}.png`;
-  a.href = cv.toDataURL('image/png');
+  a.href = composite().toDataURL('image/png');
   a.click();
 });
 
@@ -925,27 +968,47 @@ $('link').addEventListener('click', async () => {
 
 /* ------------------------------ recorder ------------------------------ */
 let rec = null, recChunks = [], recTimer = 0, recT0 = 0;
+let recCv = null, recCtx = null, recPumping = false;
+function pumpRec() {
+  if (!recPumping || !rec) return;
+  if (recCv.width !== cv.width || recCv.height !== cv.height) {
+    recCv.width = cv.width; recCv.height = cv.height;
+  }
+  recCtx.globalCompositeOperation = 'source-over';
+  recCtx.clearRect(0, 0, recCv.width, recCv.height);
+  recCtx.drawImage(cv, 0, 0);
+  recCtx.globalCompositeOperation = 'screen';
+  recCtx.drawImage(gcv, 0, 0);
+  recCtx.drawImage(dcv, 0, 0);
+  requestAnimationFrame(pumpRec);
+}
 const recBtn = $('rec');
 recBtn.addEventListener('click', () => {
   if (rec) { rec.stop(); return; }
-  if (typeof MediaRecorder === 'undefined' || !cv.captureStream) {
+  if (typeof MediaRecorder === 'undefined' || typeof HTMLCanvasElement.prototype.captureStream !== 'function') {
     alert('Video recording is not supported in this browser — try Chrome, Edge or Firefox.');
     return;
   }
   recChunks = [];
-  const stream = cv.captureStream(60);
+  recCv = document.createElement('canvas');
+  recCv.width = cv.width; recCv.height = cv.height;
+  recCtx = recCv.getContext('2d');
+  recPumping = true;
+  requestAnimationFrame(pumpRec);
+  const stream = recCv.captureStream(60);
   const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
     ? 'video/webm;codecs=vp9' : 'video/webm';
   rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 12_000_000 });
   rec.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data); };
   rec.onstop = () => {
+    recPumping = false;
     const url = URL.createObjectURL(new Blob(recChunks, { type: 'video/webm' }));
     const a = document.createElement('a');
     a.download = `spirograph-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.webm`;
     a.href = url; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
     clearInterval(recTimer);
-    rec = null;
+    rec = null; recCv = null; recCtx = null;
     recBtn.classList.remove('live');
     recBtn.textContent = '⏺ Rec';
   };
@@ -1005,9 +1068,10 @@ addEventListener('keydown', (e) => {
 function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   W = stage.clientWidth; H = stage.clientHeight; // stage = space right of the docked panel
-  for (const c of [cv, ov]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+  for (const c of [cv, gcv, dcv]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  dctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   paintBg();
   if (!S.fade) redrawTo(tCur); // keep artwork across resizes
   else lastPt = null;
@@ -1029,7 +1093,7 @@ function loadHash() {
   S.speed = num('sp', S.speed); S.width = num('w', S.width);
   S.hueSpeed = num('hs', S.hueSpeed); S.glow = num('g', S.glow);
   S.morphSpeed = num('ms', S.morphSpeed); S.fadeRate = num('fd', S.fadeRate);
-  S.fade = p.has('f'); S.keep = p.has('k'); S.morph = p.has('mo'); S.twin = p.has('tw');
+  S.fade = p.has('f'); S.fadeGlow = p.has('fg'); S.keep = p.has('k'); S.morph = p.has('mo'); S.twin = p.has('tw');
   if (p.has('c2')) {
     S.c2 = true;
     const hex = (v) => (/^[0-9a-fA-F]{6}$/.test(v) ? '#' + v : null);
