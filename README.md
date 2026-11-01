@@ -20,6 +20,7 @@ https://github.com/user-attachments/assets/placeholder-video-or-screenshot
 - **Two-color mode** — cross-fade between any two picked colors instead of the full rainbow
 - **Progress & completion** — live "closes in ~N laps" hint, and an instant **⏩ Finish** fast-forward
 - **Presets & randomizer** — curated starting shapes, or 🎲 one-shot chaos
+- **🔒 Per-control locks** — pin any control (hover to reveal its padlock); Random and Auto-morph only ever touch what you leave unlocked — lock your favorite ring & planet, then riff on everything else
 - **Export** — save a crisp PNG, or record 60fps WebM video of the canvas (native `MediaRecorder`)
 - **Shareable state** — every parameter lives in the URL hash; **🔗 Link** copies the current look to your clipboard
 - **Responsive** — docked glass control panel on desktop, floating overlay on mobile
