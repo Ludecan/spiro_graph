@@ -16,11 +16,12 @@ https://github.com/user-attachments/assets/placeholder-video-or-screenshot
 - **Twin pen** — a second pen on the opposite side of the planet, drawing an interlocking twin curve
 - **Auto-morph** — parameters drift on slow LFOs + noise; watch shapes melt into each other forever
 - **Free draw** — never-resets mode: tweak geometry mid-curve and the pen keeps drawing from where it is
-- **Fade trails / fade glow** — independent controls: comet mode with adjustable trail length, or "glow-only" fade where the soft aura dissolves while your colored trail stays permanently inked
+- **Fade trails / fade glow** — fully independent lifetimes: comet mode where the trail dissolves **x seconds after being drawn**, or "glow-only" fade where the soft aura evaporates on its own clock while your colored trail stays permanently inked — durations are frame-rate independent
 - **Two-color mode** — cross-fade between any two picked colors instead of the full rainbow
 - **Progress & completion** — live "closes in ~N laps" hint, and an instant **⏩ Finish** fast-forward
 - **Presets & randomizer** — curated starting shapes, or 🎲 one-shot chaos
 - **🔒 Per-control locks** — pin *any* control, even the fade & mode engines (hover to reveal its padlock); Random and Auto-morph only ever touch what you leave unlocked — lock your favorite ring & planet, then riff on everything else, or lock the look and riff on engines
+- **💡 Built-in hints** — hover any control for a plain-language explanation of what it does and how it interacts with the rest
 - **Export** — save a crisp PNG, or record 60fps WebM video of the canvas (native `MediaRecorder`)
 - **Shareable state** — every parameter lives in the URL hash; **🔗 Link** copies the current look to your clipboard
 - **Responsive** — docked glass control panel on desktop, floating overlay on mobile
@@ -53,8 +54,9 @@ Or serve it: `python3 -m http.server` → http://localhost:8000
 | Color shift | rainbow hue rate (0 = fixed color) |
 | Glow | neon halo strength |
 | Fade trails | comet mode — everything dissolves, endless loop |
+| Trail duration | seconds a trail segment stays before it's fully gone |
 | Fade glow | aura dissolves, colored trail stays permanently inked |
-| Trail length | fade speed, drives both layers |
+| Glow duration | seconds a halo lingers before it fully evaporates |
 | Free draw | parameter changes continue on the same canvas |
 | Auto-morph (+ speed) | parameters drift and shapes mutate live |
 | Twin pen | a second pen on the planet's opposite side |

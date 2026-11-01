@@ -60,9 +60,13 @@ banner comments: `state` → `canvas setup` → `stroke drawing` → `auto-morph
 
 ### Modes (frame loop branches)
 - **strict** (default): stop at `tMax`, badge "complete"; ⏩ Finish = `fastForward()`.
-- **fade** (`S.fade`): wrap forever, bg repaint at `fadeRate/100` alpha each frame.
-- **fadeGlow** (`S.fadeGlow`): glow layer dissolves, ink persists; completes
-  normally in strict mode; keeps dissolving after done.
+- **fade** (`S.fade`): wrap forever; ink decays toward the bg with
+  `decayAlpha(dt, S.trailDur)` — exponential, wall-time based, so a segment is
+  invisible (1/255) exactly `trailDur` seconds after being drawn, at any fps.
+  **Geometry changes must not `restart()` here** — the comet canvas self-heals.
+- **fadeGlow** (`S.fadeGlow`): glow layer dissolves on its own clock
+  (`decayAlpha(dt, S.glowDur)`), ink persists; completes normally in strict
+  mode; keeps dissolving after done.
 - **keep** (`S.keep`, free draw): param changes never clear the canvas; pen
   continues from `lastPt` with a connector line (`pendingConnect`);
   `paramSeq`/`lastWrapSeq` detect a re-traced closed curve and stop to avoid
@@ -72,11 +76,13 @@ banner comments: `state` → `canvas setup` → `stroke drawing` → `auto-morph
 - Stat line (`statText`/`updateStat`) + progress bar: "lap x / N · closes in ~N".
 
 ### Controls & state
-`S` holds everything; UI ids are short (`R r d wob wf mirror spin sp w hs g ms fd`
-sliders; `fade fglow keep morph twin c2` toggles; `ca cb` color pickers;
-`mode` segment). Panel layout: docked 320px left on desktop
-(`body.panel-hidden` slides it; `ResizeObserver` on `#stage` re-centers),
-floating overlay below 720px. Keyboard: `Space R M C L H`.
+`S` holds everything; UI ids are short (`R r d wob wf mirror spin sp w hs g ms
+td gd` sliders; `fade fglow keep morph twin c2` toggles; `ca cb` color pickers;
+`mode` segment). Every control carries a `title` tooltip explaining what it
+does (fields/switch labels carry it; lock buttons override with theirs). Panel
+layout: docked 320px left on desktop (`body.panel-hidden` slides it;
+`ResizeObserver` on `#stage` re-centers), floating overlay below 720px.
+Keyboard: `Space R M C L H`.
 
 **Locks (🔒):** `locks` Set keyed by control id; hover-revealed padlock buttons
 (`.lock[data-lock]`); `isLocked()` gates **Random** and **Auto-morph drift**.
@@ -86,9 +92,10 @@ unlocked). Locks persist as `lk=a,b,c` in the URL hash. Locks protect from the
 *machine* only: users can always toggle/move a locked control by hand.
 
 ### URL hash = full shareable state
-`#m=&R=&r=&d=&wob=&wf=&mir=&sn=&sp=&w=&hs=&g=&ms=&fd=&h=&f=&fg=&k=&mo=&tw=&c2=&ca=&cb=&lk=`
+`#m=&R=&r=&d=&wob=&wf=&mir=&sn=&sp=&w=&hs=&g=&ms=&td=&gd=&h=&f=&fg=&k=&mo=&tw=&c2=&ca=&cb=&lk=`
 (`pushHash` debounced 400ms; 🔗 Link button / `L` copies). `loadHash()` parses
-with hex validation for colors.
+with hex validation for colors and converts legacy `fd=` (per-frame fade %)
+into an equivalent `trailDur` seconds.
 
 ## Gotchas we already hit — do not regress
 1. **Canvas is a replaced element**: `inset: 0` alone sizes it to its
@@ -102,11 +109,16 @@ with hex validation for colors.
 6. Clicking a `.lock` inside a `<label class="switch">` needs
    `preventDefault()` or it toggles the checkbox.
 7. The panel is compact by design (grid2 rows, hidden-until-live fields
-   `#msField`/`#fdField`, thin scrollbar) — keep it fitting ~660px height.
+   `#msField`/`#tdField`/`#gdField`, thin scrollbar) — keep it fitting ~660px height.
 8. Fade trails must never set `done`; the keep-mode stop only applies when
    neither fade nor morph is on.
 9. Exports must composite all three layers (screenshots without glow surprised
    us once).
+10. Fade mode must NOT `restart()` on geometry changes (`onShapeChanged` early
+    return) — wiping every slider step kills the comet look; the self-erasing
+    canvas heals any mismatch within `trailDur` seconds.
+11. Trail/glow fading is time-based (`decayAlpha`), never per-frame-percent —
+    it must look identical at 30, 60 or 144 fps.
 
 ## Conventions
 - Keep it **one file**; no frameworks, no build, no dependencies.

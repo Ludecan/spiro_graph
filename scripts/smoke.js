@@ -43,9 +43,9 @@ function makeEl(id) {
 }
 const els = {};
 const ids = ['main','glow','dot','stage','panel','reveal','badge','mode','R','r','d','wob','wf','mirror','spin',
-  'sp','w','hs','g','fade','fglow','keep','morph','ms','fd','msField','fdField','twin','c2','ca','cb',
+  'sp','w','hs','g','fade','fglow','keep','morph','ms','td','gd','msField','tdField','gdField','twin','c2','ca','cb',
   'play','clear','rand','save','rec','ff','link','bar','stat','presets','collapse',
-  'vR','vr','vd','vwob','vwf','vmir','vspn','vsp','vw','vhs','vg','vms','vfd'];
+  'vR','vr','vd','vwob','vwf','vmir','vspn','vsp','vw','vhs','vg','vms','vtd','vgd'];
 ids.forEach(i => els[i] = makeEl(i));
 els.stage.clientWidth = 1224; els.stage.clientHeight = 686;
 const mHypo = makeEl('mHypo'); mHypo.dataset.mode = 'hypo';
@@ -86,6 +86,7 @@ globalThis.__setHue = (rate, base) => { S.hueSpeed = rate; hue0 = base; restart(
 globalThis.__changeParam = (o) => { Object.assign(S, o); onShapeChanged(); };
 globalThis.__statText = statText; globalThis.__ff = fastForward; globalThis.__tMax = tMax;
 globalThis.__locks = () => locks;
+globalThis.__decayAlpha = decayAlpha;
 `;
 eval(src);
 
@@ -163,14 +164,43 @@ p = globalThis.__probe();
 if (Math.abs(p.S.r - rBefore) < 0.5) throw new Error('morph did not drift');
 console.log('auto-morph drift: ✓');
 
-// 8) fade wraps, never done; fadeRate respected
-globalThis.__set({ morph: false, fade: true, fadeRate: 12, wob: 100, wf: 7, speed: 6, mirror: 3 });
+// 8) fade wraps, never done; decay math + frame-rate independence
+globalThis.__set({ morph: false, fade: true, trailDur: 6, wob: 100, wf: 7, speed: 6, mirror: 3 });
 globalThis.__restart();
 drawn.clear();
 globalThis.__runFrames(800, 40);
 if (maxDist(612, 343) > limit) throw new Error('fade+wobble+kaleido escaped');
 if (globalThis.__probe().done) throw new Error('fade should never be done');
-console.log('fade wrap + trail rate: ✓');
+// after exactly `dur` seconds of decay, brightness must be ~1/255 (invisible), any fps
+const decayAfter = (fps, dur) => { let b = 1; for (let i = 0; i < fps * dur; i++) b *= 1 - globalThis.__decayAlpha(1 / fps, dur); return b; };
+const d60 = decayAfter(60, 6), d15 = decayAfter(15, 6), d120 = decayAfter(120, 6);
+if (Math.abs(d60 - 1 / 255) / (1 / 255) > 0.02) throw new Error('trail not gone after dur: ' + d60);
+if (Math.abs(d60 - d15) / d60 > 0.005 || Math.abs(d60 - d120) / d60 > 0.005)
+  throw new Error('fade not frame-rate independent: ' + [d15, d60, d120]);
+console.log('fade wrap + duration decay (frame-rate indep): ✓');
+
+// 8b) geometry changes in fade mode must NOT wipe/restart (comet self-heals)
+globalThis.__set({ fade: true, keep: false, morph: false, speed: 4 });
+globalThis.__restart();
+globalThis.__runFrames(30, 30);
+const tFadeBefore = globalThis.__probe().tCur;
+if (tFadeBefore <= 0) throw new Error('fade mode not drawing');
+globalThis.__changeParam({ d: 90 });
+p = globalThis.__probe();
+if (Math.abs(p.tCur - tFadeBefore) > 1e-9) throw new Error('fade mode restarted on param change');
+if (p.pendingConnect) throw new Error('fade mode should not draw a connector');
+console.log('fade mode: param change keeps flowing (no wipe) ✓');
+
+// 8c) duration sliders are live, style-only (no restart)
+els.td.value = '12.5'; els.td.fire('input');
+els.gd.value = '4.5'; els.gd.fire('input');
+p = globalThis.__probe();
+if (Math.abs(p.S.trailDur - 12.5) > 1e-9 || Math.abs(p.S.glowDur - 4.5) > 1e-9)
+  throw new Error('duration sliders not read: ' + p.S.trailDur + '/' + p.S.glowDur);
+if (Math.abs(p.tCur - tFadeBefore) > 1e-9) throw new Error('duration slider restarted the drawing');
+if (!/^12\.5s$/.test(els.vtd.textContent) || !/^4\.5s$/.test(els.vgd.textContent))
+  throw new Error('duration labels wrong: ' + els.vtd.textContent + ' / ' + els.vgd.textContent);
+console.log('trail/glow duration sliders: live + style-only ✓');
 
 // 9) 200x randomize + toggle churn stability
 globalThis.__set({ fade: false });
@@ -197,6 +227,8 @@ globalThis.__runFrames(60, 50); // glow keeps dissolving post-done without incid
 pushedUrl = null;
 els.link.click();
 if (!/fg=1/.test(pushedUrl)) throw new Error('hash missing fg=1');
+if (!/td=/.test(pushedUrl) || !/gd=/.test(pushedUrl) || /fd=/.test(pushedUrl))
+  throw new Error('hash should carry td/gd, not legacy fd: ' + pushedUrl);
 console.log('fade glow: completes, dissolves, persists ✓');
 globalThis.__set({ fadeGlow: false });
 
@@ -244,6 +276,22 @@ for (let i = 0; i < 300 && !(sawFade && sawMorph); i++) {
 }
 if (!sawFade || !sawMorph) throw new Error('unlocked engines should be rollable by Random');
 console.log('engine toggles: randomizable when unlocked ✓');
+
+// 12e) legacy share links: old per-frame `fd` % converts to an equivalent trail duration,
+// and new td/gd keys win over it. Boot loadHash by re-evaluating the app with that hash.
+location.hash = '#m=epi&R=200&r=50&d=100&f&fd=5.5';
+eval(src);
+p = globalThis.__probe();
+if (!p.S.fade) throw new Error('legacy hash: fade flag lost');
+if (!(p.S.trailDur > 1.4 && p.S.trailDur < 1.9))
+  throw new Error('legacy fd=5.5 should become ~1.6s trail, got ' + p.S.trailDur);
+location.hash = '#td=10&gd=3&fd=5.5';
+eval(src);
+p = globalThis.__probe();
+if (p.S.trailDur !== 10 || p.S.glowDur !== 3)
+  throw new Error('td/gd should win over legacy fd: ' + p.S.trailDur + '/' + p.S.glowDur);
+location.hash = '';
+console.log('legacy fd= hashes convert to durations ✓');
 
 setTimeout(() => {
   if (!clipUrl || !/ca=ff0000/.test(clipUrl)) throw new Error('clipboard never received the URL');
