@@ -1,0 +1,6 @@
+# local tooling / editor state
+.opencode/
+
+# OS noise
+.DS_Store
+Thumbs.db

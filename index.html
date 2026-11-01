@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SPIRO✦GRAPH — neon pattern playground</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --accent: #7c6cff;
+    --accent2: #22d3ee;
+    --panel-bg: rgba(12, 14, 30, 0.55);
+    --text: #e6e9ff;
+    --muted: #8a90b8;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+    background: #04060f;
+    color: var(--text);
+    display: flex;
+  }
+  /* canvas stage — takes all space right of the docked panel */
+  #stage { position: relative; flex: 1 1 auto; min-width: 0; height: 100dvh; overflow: hidden; }
+  /* NOTE: canvas is a replaced element — inset alone won't stretch it;
+     explicit 100% size prevents it rendering at intrinsic (dpr-scaled) size */
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #main { z-index: 0; }
+  #overlay { z-index: 1; pointer-events: none; }
+
+  /* decorative blobs floating over the art */
+  .blob {
+    position: absolute; z-index: 2; pointer-events: none;
+    border-radius: 50%; filter: blur(90px); mix-blend-mode: screen; opacity: .16;
+    animation: drift 14s ease-in-out infinite alternate;
+  }
+  .blob.a { width: 42vw; height: 42vw; background: #6d28d9; top: -12vw; right: -10vw; }
+  .blob.b { width: 34vw; height: 34vw; background: #0891b2; bottom: -14vw; left: 8vw; animation-delay: -7s; }
+  @keyframes drift {
+    from { transform: translate(0, 0) scale(1); }
+    to   { transform: translate(4vw, 3vh) scale(1.15); }
+  }
+
+  /* ---------- control panel (docked left) ---------- */
+  #panel {
+    flex: 0 0 320px; width: 320px; height: 100dvh;
+    display: flex; flex-direction: column; gap: 9px;
+    padding: 16px 18px 10px;
+    background: rgba(10, 12, 26, 0.82);
+    border: none; border-right: 1px solid rgba(255, 255, 255, 0.10);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    box-shadow: 14px 0 48px rgba(0, 0, 0, 0.45);
+    overflow-y: auto;
+    scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.18) transparent;
+    transition: margin-left 0.35s cubic-bezier(.6,.2,.2,1);
+    z-index: 10;
+  }
+  #panel::-webkit-scrollbar { width: 6px; }
+  #panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,.16); border-radius: 3px; }
+  body.panel-hidden #panel { margin-left: -320px; }
+  /* narrow screens: panel floats over the stage instead of squeezing it */
+  @media (max-width: 719px) {
+    #panel {
+      position: fixed; left: 12px; top: 12px; bottom: 12px;
+      width: min(304px, calc(100vw - 24px)); height: auto;
+      border: 1px solid rgba(255, 255, 255, 0.10); border-radius: 18px;
+      transition: transform 0.35s cubic-bezier(.6,.2,.2,1), opacity 0.3s;
+    }
+    body.panel-hidden #panel { margin-left: 0; transform: translateX(-130%); opacity: 0; pointer-events: none; }
+  }
+  #panel header { display: flex; align-items: center; justify-content: space-between; }
+  #panel h1 {
+    font-size: 17px; font-weight: 700; letter-spacing: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2), var(--accent));
+    background-size: 200%;
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: shimmer 5s linear infinite;
+  }
+  @keyframes shimmer { to { background-position: 200%; } }
+  #panel h1 i { font-style: normal; }
+  .icon-btn {
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
+    color: var(--muted); width: 28px; height: 28px; border-radius: 9px;
+    cursor: pointer; font-size: 13px; line-height: 1; transition: .2s;
+  }
+  .icon-btn:hover { color: var(--text); background: rgba(255,255,255,.12); }
+
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+  .field .lbl {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 11px; letter-spacing: 0.6px; text-transform: uppercase; color: var(--muted);
+  }
+  .field .lbl b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  #msField { opacity: .35; transition: opacity .25s; }
+  #msField.live { opacity: 1; }
+  #msField:not(.live) { display: none; }
+
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 16px;
+    background: transparent; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px; border-radius: 4px;
+    background: linear-gradient(90deg, var(--accent) var(--p, 50%), rgba(255,255,255,.13) var(--p, 50%));
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+    margin-top: -5px; background: #fff; border: none;
+    box-shadow: 0 0 10px var(--accent), 0 0 22px rgba(124,108,255,.55);
+    transition: transform .15s;
+  }
+  input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.25); }
+  input[type="range"]::-moz-range-track { height: 4px; border-radius: 4px; background: rgba(255,255,255,.13); }
+  input[type="range"]::-moz-range-progress { height: 4px; border-radius: 4px; background: var(--accent); }
+  input[type="range"]::-moz-range-thumb {
+    width: 14px; height: 14px; border-radius: 50%; background: #fff; border: none;
+    box-shadow: 0 0 10px var(--accent);
+  }
+
+  /* segmented mode toggle */
+  .seg { display: flex; background: rgba(255,255,255,.06); border-radius: 11px; padding: 3px; gap: 3px; }
+  .seg button {
+    flex: 1; padding: 6px 0; font: inherit; font-size: 12px; color: var(--muted);
+    background: transparent; border: none; border-radius: 9px; cursor: pointer; transition: .2s;
+  }
+  .seg button.on {
+    color: #fff;
+    background: linear-gradient(135deg, rgba(124,108,255,.85), rgba(34,211,238,.65));
+    box-shadow: 0 2px 14px rgba(124,108,255,.45);
+  }
+
+  /* switch */
+  .switch { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--muted); cursor: pointer; user-select: none; }
+  .switches { display: flex; flex-direction: column; gap: 9px; }
+  .switch input { display: none; }
+  .switch i {
+    width: 34px; height: 19px; border-radius: 20px; background: rgba(255,255,255,.13);
+    position: relative; transition: .25s; flex: none;
+  }
+  .switch i::after {
+    content: ''; position: absolute; top: 2.5px; left: 3px; width: 14px; height: 14px;
+    border-radius: 50%; background: #fff; transition: .25s;
+  }
+  .switch input:checked + i { background: linear-gradient(90deg, var(--accent), var(--accent2)); box-shadow: 0 0 12px rgba(124,108,255,.5); }
+  .switch input:checked + i::after { transform: translateX(14px); }
+
+  /* buttons */
+  .btns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+  .btns button {
+    font: inherit; font-size: 12px; padding: 8px 0; color: var(--text);
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.13);
+    border-radius: 11px; cursor: pointer; transition: .18s;
+  }
+  .btns button:hover { background: rgba(255,255,255,.14); transform: translateY(-1px); }
+  .btns button.primary {
+    grid-column: 1 / -1;
+    background: linear-gradient(135deg, rgba(124,108,255,.9), rgba(34,211,238,.7));
+    border: none; font-weight: 600; letter-spacing: .5px;
+    box-shadow: 0 4px 18px rgba(124,108,255,.35);
+  }
+  .btns button.span2 { grid-column: span 2; }
+  #rec.live {
+    color: #ffb9b9; border-color: rgba(255, 90, 90, .55);
+    animation: recpulse 1.1s ease-in-out infinite;
+  }
+  @keyframes recpulse { 50% { box-shadow: 0 0 18px rgba(255, 60, 60, .6); } }
+  select {
+    font: inherit; font-size: 12.5px; color: var(--text);
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.13);
+    border-radius: 11px; padding: 8px 10px; cursor: pointer; width: 100%;
+  }
+  select option { background: #10132b; }
+  #panel footer { font-size: 10.5px; color: var(--muted); text-align: center; letter-spacing: .4px; }
+  #panel footer kbd {
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14);
+    border-radius: 5px; padding: 1px 4px; font-family: inherit; font-size: 9.5px;
+  }
+  hr { border: none; border-top: 1px solid rgba(255,255,255,.08); }
+
+  /* progress stat */
+  .stat { display: flex; align-items: center; gap: 9px; font-size: 10.5px; color: var(--muted); }
+  .stat .bar { flex: 1; height: 4px; border-radius: 4px; background: rgba(255,255,255,.10); overflow: hidden; }
+  .stat .bar i { display: block; height: 100%; width: 0%; border-radius: 4px; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+  .stat span { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* floating reopen button */
+  #reveal {
+    position: fixed; z-index: 9; left: 16px; top: 16px;
+    width: 44px; height: 44px; border-radius: 14px; font-size: 18px;
+    background: var(--panel-bg); border: 1px solid rgba(255,255,255,.14); color: var(--text);
+    backdrop-filter: blur(14px); cursor: pointer;
+    opacity: 0; pointer-events: none; transition: opacity .3s;
+  }
+  #reveal.show { opacity: 1; pointer-events: auto; }
+
+  /* done badge */
+  #badge {
+    position: absolute; z-index: 5; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(8px);
+    padding: 8px 18px; border-radius: 99px; font-size: 13px; letter-spacing: .5px;
+    background: var(--panel-bg); border: 1px solid rgba(255,255,255,.14);
+    backdrop-filter: blur(12px); opacity: 0; transition: .4s; pointer-events: none;
+    max-width: calc(100vw - 40px); text-align: center;
+  }
+  #badge.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<aside id="panel">
+  <header>
+    <h1>SPIRO<i>✦</i>GRAPH</h1>
+    <button class="icon-btn" id="collapse" title="Hide panel (H)">✕</button>
+  </header>
+
+  <div class="seg" id="mode">
+    <button data-mode="hypo" class="on">Hypotrochoid</button>
+    <button data-mode="epi">Epitrochoid</button>
+  </div>
+
+  <div class="field"><span class="lbl">Ring radius <b id="vR"></b></span>
+    <input type="range" id="R" min="40" max="400" step="1"></div>
+  <div class="field"><span class="lbl">Planet radius <b id="vr"></b></span>
+    <input type="range" id="r" min="4" max="300" step="1"></div>
+  <div class="field"><span class="lbl">Pen offset <b id="vd"></b></span>
+    <input type="range" id="d" min="0" max="320" step="1"></div>
+  <div class="grid2">
+    <div class="field"><span class="lbl">Pen wobble <b id="vwob"></b></span>
+      <input type="range" id="wob" min="0" max="160" step="5"></div>
+    <div class="field"><span class="lbl">Wobble freq <b id="vwf"></b></span>
+      <input type="range" id="wf" min="1" max="12" step="1"></div>
+  </div>
+
+  <hr>
+
+  <div class="grid2">
+    <div class="field"><span class="lbl">Speed <b id="vsp"></b></span>
+      <input type="range" id="sp" min="0.2" max="8" step="0.1"></div>
+    <div class="field"><span class="lbl">Line width <b id="vw"></b></span>
+      <input type="range" id="w" min="0.5" max="6" step="0.1"></div>
+  </div>
+  <div class="grid2">
+    <div class="field"><span class="lbl">Color shift <b id="vhs"></b></span>
+      <input type="range" id="hs" min="0" max="10" step="0.1"></div>
+    <div class="field"><span class="lbl">Glow <b id="vg"></b></span>
+      <input type="range" id="g" min="0" max="10" step="0.5"></div>
+  </div>
+
+  <hr>
+
+  <div class="switches">
+    <label class="switch"><input type="checkbox" id="fade"><i></i>Fade trails (endless loop)</label>
+    <label class="switch"><input type="checkbox" id="keep"><i></i>Free draw (never resets)</label>
+    <label class="switch"><input type="checkbox" id="morph"><i></i>Auto-morph (drifting shapes)</label>
+    <div class="field" id="msField"><span class="lbl">Morph speed <b id="vms"></b></span>
+      <input type="range" id="ms" min="0.2" max="4" step="0.1"></div>
+  </div>
+
+  <hr>
+
+  <div class="btns">
+    <button class="primary" id="play">⏸ Pause</button>
+    <button id="clear">↺ Restart</button>
+    <button id="rand">🎲 Random</button>
+    <button id="ff">⏩ Finish</button>
+    <button id="save">💾 PNG</button>
+    <button id="rec" class="span2">⏺ Rec</button>
+  </div>
+
+  <select id="presets">
+    <option value="">✦ Load a preset…</option>
+  </select>
+
+  <div class="stat"><div class="bar"><i id="bar"></i></div><span id="stat"></span></div>
+
+  <footer><kbd>Space</kbd> play · <kbd>R</kbd> random · <kbd>M</kbd> morph · <kbd>C</kbd> clear · <kbd>H</kbd> hide</footer>
+</aside>
+
+<main id="stage">
+  <canvas id="main"></canvas>
+  <canvas id="overlay"></canvas>
+  <div class="blob a"></div>
+  <div class="blob b"></div>
+  <div id="badge"></div>
+</main>
+
+<button id="reveal" title="Show controls (H)">✦</button>
+
+<script>
+'use strict';
+
+/* ============================== state ============================== */
+const S = {
+  mode: 'hypo',
+  R: 220,        // fixed ring radius (abstract units)
+  r: 77,         // rolling planet radius
+  d: 130,        // pen offset from planet center
+  wob: 0,        // pen wobble amplitude (adds oscillation to pen distance)
+  wf: 4,         // wobble frequency (cycles per radian of t)
+  speed: 2,      // radians / second
+  width: 1.6,    // core stroke width
+  hueSpeed: 2.4, // rainbow rate (0 = fixed color)
+  glow: 4,       // neon halo strength
+  fade: false,   // fading trails
+  keep: false,   // free draw: parameter changes never clear the canvas
+  morph: false,  // auto-morph: parameters drift over time
+  morphSpeed: 1, // drift rate
+  playing: true,
+};
+let hue0 = 290; // base hue (randomizable)
+
+const PRESETS = [
+  { name: 'Nebula Bloom',   mode:'hypo', R:240, r:71,  d:148, wob:0,   wf:4, hue:0,   hs:2.2, g:4.5, w:1.6 },
+  { name: 'Ion Ring',       mode:'epi',  R:180, r:24,  d:150, wob:0,   wf:4, hue:185, hs:3.6, g:5,   w:1.4 },
+  { name: 'Star Anvil',     mode:'epi',  R:260, r:117, d:210, wob:0,   wf:4, hue:45,  hs:1.6, g:4,   w:1.8 },
+  { name: 'Atom Shell',     mode:'epi',  R:320, r:15,  d:260, wob:0,   wf:4, hue:200, hs:5,   g:6,   w:1.1 },
+  { name: 'Galaxy Spiral',  mode:'hypo', R:360, r:173, d:96,  wob:0,   wf:4, hue:280, hs:1.2, g:3.5, w:1.7 },
+  { name: 'Tiny Gears',     mode:'hypo', R:300, r:47,  d:40,  wob:0,   wf:4, hue:40,  hs:3,   g:3,   w:1.2 },
+  { name: 'Jelly Bloom',    mode:'hypo', R:260, r:83,  d:120, wob:75,  wf:5, hue:320, hs:3,   g:5,   w:1.5 },
+  { name: 'Wobble Worm',    mode:'epi',  R:150, r:95,  d:170, wob:110, wf:3, hue:110, hs:4,   g:4.5, w:1.3 },
+];
+
+/* ============================ canvas setup ============================ */
+const cv = document.getElementById('main'), ctx = cv.getContext('2d');
+const ov = document.getElementById('overlay'), octx = ov.getContext('2d');
+const stage = document.getElementById('stage');
+let W = 0, H = 0, cx = 0, cy = 0, sc = 1; // css-pixel viewport + transform
+
+// drawing runtime
+let tCur = 0;        // current angle along curve (radians, wrapped at tMax)
+let tAbs = 0;        // unwrapped time — keeps wobble phase continuous across wraps
+let hue = hue0;      // current stroke hue
+let done = false;    // curve closed (strict / non-free mode)
+let lastFrame = performance.now();
+let lastPt = null;         // last stroke endpoint (canvas px)
+let pendingConnect = false;// draw a connector from lastPt on the next stroke (free-draw param change)
+let paramSeq = 0;          // bumped whenever geometry changes (free-draw close detection)
+let lastWrapSeq = -1;
+let statTick = 0;          // throttles the panel progress line
+
+const TAU = Math.PI * 2;
+const gcd = (a, b) => b ? gcd(b, a % b) : a;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+// laps until the (static) curve closes; rounded so morphing floats can't wedge the gcd
+function tMax() {
+  const R = Math.max(1, Math.round(S.R)), r = Math.max(1, Math.round(S.r));
+  return TAU * (r / gcd(R, r));
+}
+
+// always recompute the transform — guarantees the art can never outgrow the canvas
+function computeFit() {
+  const k = (S.mode === 'epi' ? S.R + S.r : S.R - S.r);
+  const extent = Math.max(1, Math.abs(k) + S.d + S.wob); // max pen reach
+  const margin = (S.width + S.glow * 2.0) * 0.5 + 3;     // keep the neon halo inside too
+  sc = Math.max(0.0005, (Math.min(W, H) * 0.445 - margin) / extent);
+  cx = W / 2; cy = H / 2;
+}
+
+// curve point at angle t; ta = unwrapped time driving the wobble phase
+function pt(t, ta) {
+  const k = (S.mode === 'epi' ? S.R + S.r : S.R - S.r);
+  const q = k / S.r;
+  const rho = S.d + S.wob * Math.sin(S.wf * ta);
+  const c = Math.cos(t), s = Math.sin(t);
+  const qc = Math.cos(q * t), qs = Math.sin(q * t);
+  const x = S.mode === 'epi' ? k * c - rho * qc : k * c + rho * qc;
+  const y = k * s - rho * qs;
+  return [cx + x * sc, cy + y * sc];
+}
+
+function paintBg() {
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = '#04060f';
+  ctx.fillRect(0, 0, W, H);
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W, H) * 0.75);
+  g.addColorStop(0, 'rgba(64,84,190,0.16)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+}
+
+function fadeFrame() {
+  ctx.globalAlpha = 0.055;
+  paintBg();
+  ctx.globalAlpha = 1;
+}
+
+/* ============================ stroke drawing ============================ */
+function strokeChunk(pts, h) {
+  if (pts.length < 2) return;
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  if (S.glow > 0) {
+    ctx.strokeStyle = `hsla(${h},95%,58%,${0.04 + S.glow * 0.015})`;
+    ctx.lineWidth = S.width + S.glow * 2.0;
+    ctx.stroke();
+  }
+  ctx.strokeStyle = `hsla(${h},100%,74%,0.92)`;
+  ctx.lineWidth = S.width;
+  ctx.stroke();
+  lastPt = pts[pts.length - 1];
+}
+
+// draw the curve from angle t0 -> t1, advancing hue and wobble phase along the way
+function strokeSeg(t0, t1) {
+  if (t1 <= t0) return;
+  computeFit(); // fresh transform every stroke: shape always fits the viewport
+  const cont = pendingConnect && lastPt; // free-draw: pen drags a line to the new curve
+  pendingConnect = false;
+  const k = (S.mode === 'epi' ? S.R + S.r : S.R - S.r);
+  const q = Math.max(1, Math.abs(k / S.r));
+  const maxStep = Math.min(0.02, 0.05 / q); // keep pen-arm rotation per step small
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineCap = ctx.lineJoin = 'round';
+
+  let pts = [cont ? [lastPt[0], lastPt[1]] : pt(t0, tAbs)];
+  let t = t0, hAnchor = hue;
+  while (t < t1) {
+    const nt = Math.min(t1, t + maxStep);
+    hue += S.hueSpeed * (nt - t) * 8;
+    tAbs += nt - t;
+    t = nt;
+    pts.push(pt(t, tAbs));
+    if (Math.abs(hue - hAnchor) >= 3 && t < t1) {
+      strokeChunk(pts, (hAnchor + hue) / 2);
+      pts = [pts[pts.length - 1]];
+      hAnchor = hue;
+    }
+  }
+  strokeChunk(pts, (hAnchor + hue) / 2);
+}
+
+// instant redraw of everything from 0 -> tEnd (after resize)
+function redrawTo(tEnd) {
+  if (tEnd <= 0) return;
+  computeFit();
+  tAbs = 0;
+  hue = hue0;
+  lastPt = null;
+  strokeSeg(0, tEnd);
+}
+
+function restart(t0 = 0) {
+  computeFit();
+  paintBg();
+  tCur = t0;
+  tAbs = t0;
+  hue = hue0 + S.hueSpeed * 8 * t0;
+  done = false;
+  lastPt = null;
+  pendingConnect = false;
+  lastWrapSeq = paramSeq;
+  badge.classList.remove('show');
+}
+
+function showBadge(text) {
+  badge.textContent = text;
+  badge.classList.add('show');
+}
+
+function unDone() {
+  if (done) { done = false; badge.classList.remove('show'); }
+}
+
+/* --------------------- progress stat & fast-forward --------------------- */
+function statText() {
+  const T = tMax(), laps = T / TAU, lapNow = tCur / TAU;
+  if (S.morph) return '∞ morphing — canvas grows';
+  if (S.fade) return `∞ looping · lap ${(lapNow % 1).toFixed(2)} · ${Math.floor(lapNow) + 1} loops`;
+  if (done) return `✦ closed after ${laps} laps`;
+  const rem = Math.max(0, (T - tCur) / TAU);
+  const remTxt = rem < 0.05 ? 'moments' : `~${rem >= 10 ? Math.round(rem) : rem.toFixed(1)} laps`;
+  return `lap ${lapNow.toFixed(1)} / ${laps} · closes in ${remTxt}`;
+}
+
+function updateStat() {
+  $('stat').textContent = statText();
+  const T = tMax();
+  const frac = (S.fade || S.keep || S.morph) ? (tCur % T) / T : Math.min(1, tCur / T);
+  $('bar').style.width = (frac * 100).toFixed(1) + '%';
+}
+
+// instantly trace the rest of the curve (a big redrawTo)
+function fastForward() {
+  if (done) return;
+  const T = tMax();
+  if (tCur < T) strokeSeg(tCur, T);
+  if (S.fade || S.morph) {
+    tCur = 0;
+    lastWrapSeq = paramSeq; // endless modes just completed one loop
+  } else {
+    tCur = T;
+    done = true;
+    lastWrapSeq = paramSeq;
+    showBadge(S.keep
+      ? '✦ Curve closed — tweak any slider to keep drawing'
+      : '✦ Curve complete — tweak a slider, hit Random or load a preset');
+  }
+  updateStat();
+}
+
+/* ============================== auto-morph ============================== */
+let morphTick = 0;
+function morphStep(now, dt) {
+  const m = S.morphSpeed;
+  S.R = clamp(S.R + Math.sin(now / 5100) * m * dt * 6, 40, 400);
+  S.r = clamp(S.r + (Math.sin(now / 3200) * 0.6 + (Math.random() - 0.5)) * m * dt * 16, 4, 300);
+  S.d = clamp(S.d + (Math.cos(now / 2700 + 2) * 0.6 + (Math.random() - 0.5)) * m * dt * 16, 0, 320);
+  paramSeq++;
+  if ((morphTick = (morphTick + 1) % 4) === 0) { // keep sliders/labels in sync, throttled
+    $('R').value = String(Math.round(S.R));
+    $('r').value = String(Math.round(S.r));
+    $('d').value = String(Math.round(S.d));
+    labels(); syncFills();
+  }
+}
+
+/* ============================== main loop ============================== */
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (now - lastFrame) / 1000) || 0;
+  lastFrame = now;
+
+  if (S.playing && !done) {
+    if (S.morph) morphStep(now, dt);
+    const T = tMax();
+    if (S.fade) fadeFrame();
+    const endless = S.fade || S.keep || S.morph; // wrap forever instead of stopping at closure
+    let t0 = tCur, target = tCur + S.speed * dt, guard = 0;
+    let closed = false;
+    while (guard++ < 24) {
+      if (endless) {
+        if (target <= T) { strokeSeg(t0, target); tCur = target; break; }
+        strokeSeg(t0, T);
+        target -= T; t0 = 0;
+        if (!S.morph && !S.fade) { // free-draw without param changes re-traces a closed curve — stop to avoid blow-out
+          if (paramSeq === lastWrapSeq) { closed = true; tCur = 0; break; }
+          lastWrapSeq = paramSeq;
+        }
+      } else {
+        if (target >= T) { strokeSeg(t0, T); tCur = T; closed = true; }
+        else { strokeSeg(t0, target); tCur = target; }
+        break;
+      }
+    }
+    if (closed) {
+      done = true;
+      showBadge(S.keep
+        ? '✦ Curve closed — tweak any slider to keep drawing'
+        : '✦ Curve complete — tweak a slider, hit Random or load a preset');
+    }
+  }
+  drawDot(now);
+  if ((statTick = (statTick + 1) % 6) === 0) updateStat(); // progress line ~10x/s
+}
+
+function drawDot(now) {
+  octx.clearRect(0, 0, W, H);
+  if (!S.playing || done) return;
+  const [x, y] = pt(tCur, tAbs);
+  const pulse = 5 + Math.sin(now / 160) * 2;
+  octx.globalCompositeOperation = 'lighter';
+  const g = octx.createRadialGradient(x, y, 0, x, y, pulse * 4);
+  g.addColorStop(0, `hsla(${hue},100%,82%,0.95)`);
+  g.addColorStop(1, 'hsla(0,0%,0%,0)');
+  octx.fillStyle = g;
+  octx.beginPath();
+  octx.arc(x, y, pulse * 4, 0, TAU);
+  octx.fill();
+}
+
+/* ================================ UI ================================ */
+const $ = (id) => document.getElementById(id);
+const badge = $('badge');
+const sliders = ['R','r','d','wob','wf','sp','w','hs','g','ms'];
+const toggles = ['fade','keep','morph'];
+const inputs = [...sliders, ...toggles];
+
+function syncFills() {
+  for (const id of sliders) {
+    const el = $(id);
+    const p = ((el.value - el.min) / (el.max - el.min)) * 100;
+    el.style.setProperty('--p', p + '%');
+  }
+}
+
+// returns true if any geometry parameter changed
+function readUI() {
+  const prev = { R: S.R, r: S.r, d: S.d, wob: S.wob, wf: S.wf, mode: S.mode };
+  S.R = +$('R').value; S.r = +$('r').value; S.d = +$('d').value;
+  S.wob = +$('wob').value; S.wf = +$('wf').value;
+  S.speed = +$('sp').value; S.width = +$('w').value;
+  S.hueSpeed = +$('hs').value; S.glow = +$('g').value;
+  S.morphSpeed = +$('ms').value;
+  S.fade = $('fade').checked; S.keep = $('keep').checked; S.morph = $('morph').checked;
+  return prev.R !== S.R || prev.r !== S.r || prev.d !== S.d ||
+         prev.wob !== S.wob || prev.wf !== S.wf || prev.mode !== S.mode;
+}
+
+function writeUI() {
+  $('R').value = S.R; $('r').value = S.r; $('d').value = S.d;
+  $('wob').value = S.wob; $('wf').value = S.wf;
+  $('sp').value = S.speed; $('w').value = S.width;
+  $('hs').value = S.hueSpeed; $('g').value = S.glow; $('ms').value = S.morphSpeed;
+  $('fade').checked = S.fade; $('keep').checked = S.keep; $('morph').checked = S.morph;
+  $('msField').classList.toggle('live', S.morph);
+  for (const b of $('mode').children) b.classList.toggle('on', b.dataset.mode === S.mode);
+  syncFills();
+}
+
+function labels() {
+  $('vR').textContent = Math.round(+$('R').value);
+  $('vr').textContent = Math.round(+$('r').value);
+  $('vd').textContent = Math.round(+$('d').value);
+  $('vwob').textContent = Math.round(+$('wob').value);
+  $('vwf').textContent = $('wf').value;
+  $('vsp').textContent = (+$('sp').value).toFixed(1);
+  $('vw').textContent = (+$('w').value).toFixed(1);
+  $('vhs').textContent = (+$('hs').value).toFixed(1);
+  $('vg').textContent = (+$('g').value).toFixed(1);
+  $('vms').textContent = (+$('ms').value).toFixed(1);
+}
+
+function pushHash() {
+  const p = new URLSearchParams({
+    m: S.mode, R: Math.round(S.R), r: Math.round(S.r), d: Math.round(S.d),
+    wob: S.wob, wf: S.wf, sp: S.speed, w: S.width,
+    hs: S.hueSpeed, g: S.glow, ms: S.morphSpeed, h: Math.round(hue0),
+    ...(S.fade ? { f: 1 } : {}), ...(S.keep ? { k: 1 } : {}), ...(S.morph ? { mo: 1 } : {}),
+  });
+  history.replaceState(null, '', '#' + p);
+}
+let hashTimer;
+const scheduleHash = () => { clearTimeout(hashTimer); hashTimer = setTimeout(pushHash, 400); };
+
+// geometry change while free-drawing: keep the canvas, connect from the pen's current spot
+function onShapeChanged() {
+  paramSeq++;
+  if (S.keep || S.morph) {
+    pendingConnect = true;
+    unDone();
+  } else {
+    restart();
+  }
+}
+
+function checkImmediateDone() {
+  if (!S.fade && !S.keep && !S.morph && tCur >= tMax() - 1e-9 && !done) {
+    done = true;
+    showBadge('✦ Curve complete — tweak a slider, hit Random or load a preset');
+  }
+}
+
+for (const id of inputs) {
+  $(id).addEventListener('input', () => {
+    const shapeChanged = readUI();
+    labels(); syncFills(); scheduleHash();
+    if (id === 'fade') { restart(); return; }
+    if (id === 'ms') return;
+    if (shapeChanged) onShapeChanged();
+  });
+}
+
+$('morph').addEventListener('change', () => {
+  readUI();
+  $('msField').classList.toggle('live', S.morph);
+  scheduleHash();
+  if (S.morph) unDone(); else checkImmediateDone();
+  lastWrapSeq = paramSeq;
+});
+$('keep').addEventListener('change', () => {
+  readUI();
+  scheduleHash();
+  if (S.keep) { pendingConnect = !!lastPt; unDone(); }
+  else checkImmediateDone();
+  lastWrapSeq = paramSeq;
+});
+
+$('mode').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b || b.dataset.mode === S.mode) return;
+  S.mode = b.dataset.mode;
+  writeUI(); scheduleHash(); onShapeChanged();
+});
+
+$('play').addEventListener('click', togglePlay);
+function togglePlay() {
+  S.playing = !S.playing;
+  $('play').textContent = S.playing ? '⏸ Pause' : '▶ Play';
+}
+
+$('clear').addEventListener('click', () => restart());
+$('ff').addEventListener('click', fastForward);
+
+$('rand').addEventListener('click', randomize);
+function randomize() {
+  const ri = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+  S.mode = Math.random() < 0.5 ? 'hypo' : 'epi';
+  S.R = ri(90, 380);
+  S.r = ri(6, 260);
+  S.d = ri(12, 300);
+  S.wob = Math.random() < 0.5 ? 0 : ri(20, 120);
+  S.wf = ri(2, 9);
+  S.hueSpeed = +(1 + Math.random() * 4).toFixed(1);
+  S.glow = +(2 + Math.random() * 6).toFixed(1);
+  S.width = +(1 + Math.random() * 1.4).toFixed(1);
+  hue0 = Math.random() * 360;
+  writeUI(); labels(); scheduleHash(); restart();
+}
+
+$('save').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.download = `spirograph-${S.mode}-${Math.round(S.R)}x${Math.round(S.r)}x${Math.round(S.d)}.png`;
+  a.href = cv.toDataURL('image/png');
+  a.click();
+});
+
+/* ------------------------------ recorder ------------------------------ */
+let rec = null, recChunks = [], recTimer = 0, recT0 = 0;
+const recBtn = $('rec');
+recBtn.addEventListener('click', () => {
+  if (rec) { rec.stop(); return; }
+  if (typeof MediaRecorder === 'undefined' || !cv.captureStream) {
+    alert('Video recording is not supported in this browser — try Chrome, Edge or Firefox.');
+    return;
+  }
+  recChunks = [];
+  const stream = cv.captureStream(60);
+  const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+    ? 'video/webm;codecs=vp9' : 'video/webm';
+  rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 12_000_000 });
+  rec.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data); };
+  rec.onstop = () => {
+    const url = URL.createObjectURL(new Blob(recChunks, { type: 'video/webm' }));
+    const a = document.createElement('a');
+    a.download = `spirograph-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.webm`;
+    a.href = url; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    clearInterval(recTimer);
+    rec = null;
+    recBtn.classList.remove('live');
+    recBtn.textContent = '⏺ Rec';
+  };
+  rec.start(250);
+  recT0 = performance.now();
+  recBtn.classList.add('live');
+  recTimer = setInterval(() => {
+    const s = Math.floor((performance.now() - recT0) / 1000);
+    recBtn.textContent = `⏹ ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }, 500);
+});
+
+// presets
+const sel = $('presets');
+for (const [i, p] of PRESETS.entries()) {
+  const o = document.createElement('option');
+  o.value = i; o.textContent = p.name;
+  sel.appendChild(o);
+}
+sel.addEventListener('change', () => {
+  const p = PRESETS[sel.value];
+  if (!p) return;
+  Object.assign(S, { mode: p.mode, R: p.R, r: p.r, d: p.d, wob: p.wob, wf: p.wf,
+                     hueSpeed: p.hs, glow: p.g, width: p.w });
+  hue0 = p.hue;
+  sel.value = '';
+  writeUI(); labels(); scheduleHash(); restart();
+});
+
+// panel visibility (docked slide on desktop, overlay on mobile)
+const panel = $('panel'), reveal = $('reveal');
+function togglePanel(force) {
+  const hide = force !== undefined ? force : !document.body.classList.contains('panel-hidden');
+  document.body.classList.toggle('panel-hidden', hide);
+  reveal.classList.toggle('show', hide);
+}
+$('collapse').addEventListener('click', () => togglePanel(true));
+reveal.addEventListener('click', () => togglePanel(false));
+
+// keyboard
+addEventListener('keydown', (e) => {
+  if (e.target.matches('input, select, textarea')) return;
+  if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+  else if (e.code === 'KeyR') randomize();
+  else if (e.code === 'KeyM') {
+    const m = $('morph');
+    m.checked = !m.checked;
+    m.dispatchEvent(new Event('change'));
+  }
+  else if (e.code === 'KeyC') restart();
+  else if (e.code === 'KeyH') togglePanel();
+});
+
+/* ============================== resize ============================== */
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = stage.clientWidth; H = stage.clientHeight; // stage = space right of the docked panel
+  for (const c of [cv, ov]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  paintBg();
+  if (!S.fade) redrawTo(tCur); // keep artwork across resizes
+  else lastPt = null;
+}
+let resizeTimer;
+const scheduleResize = () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(resize, 120); };
+addEventListener('resize', scheduleResize);            // window size or dpr (zoom) changed
+new ResizeObserver(scheduleResize).observe(stage);     // panel slide/dock changed stage size
+
+/* ============================== boot ============================== */
+function loadHash() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  if (![...p].length) return;
+  const num = (k, def) => (p.has(k) && isFinite(+p.get(k))) ? +p.get(k) : def;
+  if (p.get('m') === 'epi' || p.get('m') === 'hypo') S.mode = p.get('m');
+  S.R = num('R', S.R); S.r = num('r', S.r); S.d = num('d', S.d);
+  S.wob = num('wob', S.wob); S.wf = num('wf', S.wf);
+  S.speed = num('sp', S.speed); S.width = num('w', S.width);
+  S.hueSpeed = num('hs', S.hueSpeed); S.glow = num('g', S.glow);
+  S.morphSpeed = num('ms', S.morphSpeed);
+  S.fade = p.has('f'); S.keep = p.has('k'); S.morph = p.has('mo');
+  hue0 = num('h', hue0);
+}
+
+loadHash();
+writeUI();
+labels();
+resize();
+restart();
+updateStat();
+requestAnimationFrame(frame);
+if (innerWidth < 640) togglePanel(true);
+</script>
+</body>
+</html>
