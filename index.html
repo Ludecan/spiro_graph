@@ -35,6 +35,11 @@
   #glow { z-index: 1; pointer-events: none; mix-blend-mode: screen; }
   /* dot layer: just the live pen tip, re-cleared every frame */
   #dot { z-index: 2; pointer-events: none; mix-blend-mode: screen; }
+  /* subtle vignette: focuses the neon art and adds depth at the edges */
+  #stage::after {
+    content: ''; position: absolute; inset: 0; z-index: 4; pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 50%, rgba(2, 3, 12, 0.55) 100%);
+  }
 
   /* decorative blobs floating over the art */
   .blob {
@@ -814,19 +819,52 @@ function frame(now) {
   if ((statTick = (statTick + 1) % 6) === 0) updateStat(); // progress line ~10x/s
 }
 
+function dotGradient(x, y, radius, sp) {
+  const g = dctx.createRadialGradient(x, y, 0, x, y, radius);
+  g.addColorStop(0, 'rgba(255,255,255,0.95)'); // white-hot pen tip
+  g.addColorStop(0.22, sp.core);
+  g.addColorStop(1, 'hsla(0,0%,0%,0)');
+  return g;
+}
+
 function drawDot(now) {
   dctx.clearRect(0, 0, W, H);
   if (!S.playing || done) return;
-  const [x, y] = pt(tCur, tAbs);
+
   const pulse = 5 + Math.sin(now / 160) * 2;
+  const radius = pulse * 4;
+  const [main, twin] = ptBoth(tCur, tAbs);
+  const phase = S.c2 ? S.hueSpeed * tAbs * 0.6 : hue;
+  const spMain = colorSpec(phase, false);
+  const spTwin = S.twin ? colorSpec(phase, true) : null;
+  const gMain = dotGradient(main[0], main[1], radius, spMain);
+  const gTwin = spTwin ? dotGradient(twin[0], twin[1], radius, spTwin) : null;
+
+  // every kaleidoscope copy gets its own live tip, not just the first one
+  const N = Math.min(12, Math.max(1, Math.round(S.mirror)));
   dctx.globalCompositeOperation = 'lighter';
-  const g = dctx.createRadialGradient(x, y, 0, x, y, pulse * 4);
-  g.addColorStop(0, colorSpec(S.c2 ? S.hueSpeed * tAbs * 0.6 : hue, false).core);
-  g.addColorStop(1, 'hsla(0,0%,0%,0)');
-  dctx.fillStyle = g;
-  dctx.beginPath();
-  dctx.arc(x, y, pulse * 4, 0, TAU);
-  dctx.fill();
+  for (let k = 0; k < N; k++) {
+    const angle = N > 1 ? k * TAU / N : 0;
+    const flip = N > 1 && (k & 1) === 1;
+    dctx.save();
+    if (angle || flip) {
+      dctx.translate(cx, cy);
+      dctx.rotate(angle);
+      if (flip) dctx.scale(1, -1);
+      dctx.translate(-cx, -cy);
+    }
+    dctx.fillStyle = gMain;
+    dctx.beginPath();
+    dctx.arc(main[0], main[1], radius, 0, TAU);
+    dctx.fill();
+    if (gTwin) {
+      dctx.fillStyle = gTwin;
+      dctx.beginPath();
+      dctx.arc(twin[0], twin[1], radius, 0, TAU);
+      dctx.fill();
+    }
+    dctx.restore();
+  }
 }
 
 /* ================================ UI ================================ */
