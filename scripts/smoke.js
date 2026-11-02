@@ -87,6 +87,7 @@ globalThis.__changeParam = (o) => { Object.assign(S, o); onShapeChanged(); };
 globalThis.__statText = statText; globalThis.__ff = fastForward; globalThis.__tMax = tMax;
 globalThis.__locks = () => locks;
 globalThis.__decayAlpha = decayAlpha;
+globalThis.__pt = pt;
 `;
 eval(src);
 
@@ -231,6 +232,31 @@ if (!/td=/.test(pushedUrl) || !/gd=/.test(pushedUrl) || /fd=/.test(pushedUrl))
   throw new Error('hash should carry td/gd, not legacy fd: ' + pushedUrl);
 console.log('fade glow: completes, dissolves, persists ✓');
 globalThis.__set({ fadeGlow: false });
+
+// 11) mode buttons: clicking swaps curve, highlights, restarts; curves genuinely differ
+globalThis.__set({ mode: 'hypo', fade: false, keep: false, morph: false, c2: false, R: 220, r: 77, d: 130 });
+globalThis.__restart();
+globalThis.__runFrames(30, 30);
+if (globalThis.__probe().tCur <= 1e-9) throw new Error('mode test: not drawing before click');
+els.mode.fire('click', { target: { closest: () => els.mode.children[1] } }); // click "Epitrochoid"
+p = globalThis.__probe();
+if (p.S.mode !== 'epi' || p.tCur > 1e-9) throw new Error('mode click did not switch + restart');
+if (!els.mode.children[1].classList.contains('on') || els.mode.children[0].classList.contains('on'))
+  throw new Error('mode button highlight did not follow');
+const curve = (mode) => {
+  globalThis.__set({ mode, wob: 0, spin: 0, mirror: 1 });
+  globalThis.__restart();
+  const T = globalThis.__tMax(), pts = [];
+  for (let i = 0; i <= 400; i++) pts.push(globalThis.__pt(T * i / 400, T * i / 400));
+  return pts;
+};
+const ch = curve('hypo'), ce = curve('epi');
+let mMode = 0;
+for (let i = 0; i < ch.length; i++) mMode = Math.max(mMode, Math.hypot(ch[i][0] - ce[i][0], ch[i][1] - ce[i][1]));
+if (mMode < 20) throw new Error('hypo and epi render the same shape (delta ' + mMode.toFixed(1) + 'px)');
+pushedUrl = null; els.link.click();
+if (!/m=epi/.test(pushedUrl)) throw new Error('hash missing m=epi');
+console.log('mode buttons: switch, restart, distinct curves ✓');
 
 // 12) locks: Random keeps locked controls
 globalThis.__locks().add('g'); globalThis.__locks().add('R'); globalThis.__locks().add('mirror');
