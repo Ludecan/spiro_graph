@@ -43,17 +43,18 @@ banner comments: `state` → `canvas setup` → `stroke drawing` → `auto-morph
 `MediaRecorder` (`captureStream` on a pumped canvas via `pumpRec()`).
 
 ### Core model
-- Curves: `pt(t, ta)` / `ptTwin(t, ta)` — hypo/epi parametrics with pen wobble
-  (`rho = d + wob·sin(wf·ta)`) and optional spin rotation (`θ = spin·ta`).
+- Curves: `pt(t, ta)` / `ptBoth(t, ta)` — hypo/epi parametrics with pen wobble
+  (`rho = d + wob·sin(wf·ta)`) and optional spin rotation (`θ = spin·ta`);
+  `ptBoth` returns main + twin points and shares the trig work.
 - `tCur` = angle along curve (wraps at `tMax`); `tAbs` = **unwrapped** stroke
   time driving wobble/spin phase so those stay continuous across wraps.
 - Closure: `tMax() = 2π · r/gcd(R, r)` with **rounded** inputs (morph produces
   fractional values; raw gcd would recurse forever).
 - `strokeSeg(t0, t1)` walks the arc with adaptive steps
   (`0.05 / max(1, |k/r|)`), chunks polylines by color delta, `strokeChunk`
-  draws N kaleidoscope copies (`mirrorPts`, dihedral: odd slices flipped) for
-  both main and twin pens; `strokeLine` puts the glow pass on the glow layer
-  and the core pass on the ink layer (both `lighter` composite).
+  draws N kaleidoscope copies (canvas transform rotation; odd slices flipped)
+  for both main and twin pens; `strokeLine` puts the glow pass on the glow
+  layer and the core pass on the ink layer (both `lighter` composite).
 - `computeFit()` runs at **stroke time** (in `strokeSeg`), scaling
   `|k| + d + wob` (+ stroke/glow margin) to 44.5% of the stage's min
   dimension — art can never overflow the viewport.

@@ -53,6 +53,13 @@ const mEpi = makeEl('mEpi'); mEpi.dataset.mode = 'epi';
 els.mode.children = [mHypo, mEpi];
 els.main.getContext = makeCtx; els.glow.getContext = makeCtx; els.dot.getContext = makeCtx;
 
+// Path2D stub: record path points so bounds/connector checks still work when
+// the app builds a reusable path instead of calling ctx.moveTo/lineTo.
+global.Path2D = class {
+  moveTo(x, y) { drawn.pts.push([x, y]); }
+  lineTo(x, y) { drawn.pts.push([x, y]); }
+};
+
 let rafCb = null, rafTime = 0;
 let pushedUrl = null, clipUrl = null;
 global.window = global;
@@ -163,7 +170,10 @@ const rBefore = globalThis.__probe().S.r;
 globalThis.__runFrames(400, 33);
 p = globalThis.__probe();
 if (Math.abs(p.S.r - rBefore) < 0.5) throw new Error('morph did not drift');
-console.log('auto-morph drift: ✓');
+const fmtParam = (v) => Number.isInteger(v) ? String(v) : v.toFixed(1);
+if (els.vR.textContent !== fmtParam(p.S.R) || els.vr.textContent !== fmtParam(p.S.r) || els.vd.textContent !== fmtParam(p.S.d))
+  throw new Error('morph labels do not track fractional values: ' + els.vR.textContent + '/' + els.vr.textContent + '/' + els.vd.textContent);
+console.log('auto-morph drift + fractional labels: ✓');
 
 // 8) fade wraps, never done; decay math + frame-rate independence
 globalThis.__set({ morph: false, fade: true, trailDur: 6, wob: 100, wf: 7, speed: 6, mirror: 3 });
@@ -318,6 +328,15 @@ if (p.S.trailDur !== 10 || p.S.glowDur !== 3)
   throw new Error('td/gd should win over legacy fd: ' + p.S.trailDur + '/' + p.S.glowDur);
 location.hash = '';
 console.log('legacy fd= hashes convert to durations ✓');
+
+// 12f) malformed/out-of-range hash values are clamped to safe slider ranges
+location.hash = '#R=0&r=0&d=-1&mir=99&sp=0&h=-10';
+eval(src);
+p = globalThis.__probe();
+if (p.S.R !== 40 || p.S.r !== 4 || p.S.d !== 0 || p.S.mirror !== 12 || p.S.speed !== 0.2 || p.hue0 !== 0)
+  throw new Error('hash clamping failed: ' + JSON.stringify({ R: p.S.R, r: p.S.r, d: p.S.d, mir: p.S.mirror, sp: p.S.speed, h: p.hue0 }));
+location.hash = '';
+console.log('hash params clamped to slider ranges ✓');
 
 setTimeout(() => {
   if (!clipUrl || !/ca=ff0000/.test(clipUrl)) throw new Error('clipboard never received the URL');
