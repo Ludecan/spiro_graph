@@ -2,7 +2,7 @@
 
 A single-file interactive spirograph playground built with vanilla JavaScript, Canvas 2D and hand-rolled CSS. It renders real hypotrochoid and epitrochoid curves as neon art, with kaleidoscope copies, twin pens, trails, auto-morph, presets, locks and PNG/WebM export.
 
-**Watch it online:** https://ludecan.github.io/galton_board/
+**Watch it online:** https://ludecan.github.io/spiro_graph/
 
 ## Features
 
