@@ -1,137 +1,99 @@
-# AGENTS.md — Spiro Graph
+# Spiro Graph
 
-## What this is
+## Project overview
 
-**Spiro Graph** is an interactive, flashy spirograph playground built as a
-**single `index.html` file** — vanilla JS + Canvas 2D + handcrafted CSS.
-Zero dependencies, zero build step. Users play with real spirograph math
-(hypotrochoids/epitrochoids) rendered as neon art, and can export PNG/WebM.
+Spiro Graph is an interactive spirograph playground in a single `index.html` file. Users play with real spirograph math (hypotrochoids and epitrochoids), rendered as neon art, and can export PNG and WebM.
 
-- Repo: `git@github.com:Ludecan/spiro_graph.git` (branch `main`, push directly)
-- Live/demo: *GitHub Pages pending* — README has a placeholder link
-- Name note: repo is `spiro_graph`, local folder may be `spirograph`
+**Stack:** vanilla JavaScript, Canvas 2D, handcrafted CSS. No dependencies, no build step. Node only for the headless smoke test.
 
-## Run & test
+- Repo: `Ludecan/spiro_graph` on GitHub, default branch `main`. The local folder can be named `spirograph`.
+- Live on GitHub Pages: https://ludecan.github.io/spiro_graph/
 
-```bash
-# run the app: just open it
-xdg-open index.html        # or python3 -m http.server
+This AGENTS.md file is kept intentionally lean. Avoid cluttering with instructions and use progressive disclosure when context starts to grow.
 
-# headless behavior tests (no browser needed)
-node scripts/smoke.js      # extracts the <script> from index.html, stubs the DOM
+## Repo map
+
+```
+index.html        the whole app: <style>, markup, one <script> in banner-comment sections
+scripts/smoke.js  headless behavior test: runs the <script> against DOM/canvas stubs with probes
+README.md         user-facing description
+LICENSE           MIT
 ```
 
-`scripts/smoke.js` is the safety net: it evaluates the app script against
-minimal DOM/canvas stubs with injected probes (`__set`, `__runFrames`,
-`__randomize`, `__ff`, `__locks`, …) and asserts core behavior. **Always run
-it after touching the JS**, and extend its stub/probes when adding controls.
+### Architecture of `index.html`
 
-## Architecture (index.html)
+**Rendering: three stacked canvas layers inside `#stage`**
 
-One file, three sections: `<style>`, markup, one `<script>` organized with
-banner comments: `state` → `canvas setup` → `stroke drawing` → `auto-morph` →
-`main loop` → `UI` → `resize` → `boot`.
-
-### Rendering: three stacked canvas layers (inside `#stage`)
 | Layer | id | Contents | Behavior |
 |---|---|---|---|
-| ink | `main` | opaque bg + colored core strokes | permanent; fades only in "Fade trails" |
-| glow | `glow` | halo strokes, `mix-blend-mode: screen` | can dissolve via `destination-out` alpha shaving ("Fade glow") |
+| ink | `main` | opaque background and colored core strokes | permanent; fades only in "Fade trails" |
+| glow | `glow` | halo strokes, `mix-blend-mode: screen` | can dissolve through `destination-out` alpha shaving ("Fade glow") |
 | dot | `dot` | live pulsing pen tip | cleared every frame |
 
-`composite()` stacks all three (screen blend) for PNG export and for the
-`MediaRecorder` (`captureStream` on a pumped canvas via `pumpRec()`).
+`composite()` stacks all three (screen blend) for the PNG export and for the `MediaRecorder` (`captureStream` on a pumped canvas through `pumpRec()`).
 
-### Core model
-- Curves: `pt(t, ta)` / `ptBoth(t, ta)` — hypo/epi parametrics with pen wobble
-  (`rho = d + wob·sin(wf·ta)`) and optional spin rotation (`θ = spin·ta`);
-  `ptBoth` returns main + twin points and shares the trig work.
-- `tCur` = angle along curve (wraps at `tMax`); `tAbs` = **unwrapped** stroke
-  time driving wobble/spin phase so those stay continuous across wraps.
-- Closure: `tMax() = 2π · r/gcd(R, r)` with **rounded** inputs (morph produces
-  fractional values; raw gcd would recurse forever).
-- `strokeSeg(t0, t1)` walks the arc with adaptive steps
-  (`0.05 / max(1, |k/r|)`), chunks polylines by color delta, `strokeChunk`
-  draws N kaleidoscope copies (canvas transform rotation; odd slices flipped)
-  for both main and twin pens; `strokeLine` puts the glow pass on the glow
-  layer and the core pass on the ink layer (both `lighter` composite).
-- `computeFit()` runs at **stroke time** (in `strokeSeg`), scaling
-  `|k| + d + wob` (+ stroke/glow margin) to 44.5% of the stage's min
-  dimension — art can never overflow the viewport.
+**Core model**
 
-### Modes (frame loop branches)
-- **strict** (default): stop at `tMax`, badge "complete"; ⏩ Finish = `fastForward()`.
-- **fade** (`S.fade`): wrap forever; ink decays toward the bg with
-  `decayAlpha(dt, S.trailDur)` — exponential, wall-time based, so a segment is
-  invisible (1/255) exactly `trailDur` seconds after being drawn, at any fps.
-  **Geometry changes must not `restart()` here** — the comet canvas self-heals.
-- **fadeGlow** (`S.fadeGlow`): glow layer dissolves on its own clock
-  (`decayAlpha(dt, S.glowDur)`), ink persists; completes normally in strict
-  mode; keeps dissolving after done.
-- **keep** (`S.keep`, free draw): param changes never clear the canvas; pen
-  continues from `lastPt` with a connector line (`pendingConnect`);
-  `paramSeq`/`lastWrapSeq` detect a re-traced closed curve and stop to avoid
-  additive blow-out.
-- **morph** (`S.morph`): `morphStep()` drifts R/r/d via sine LFOs + noise
-  (respects locks); behaves like keep (endless); sliders sync ~15×/s.
-- Stat line (`statText`/`updateStat`) + progress bar: "lap x / N · closes in ~N".
+- Curves: `pt(t, ta)` and `ptBoth(t, ta)` give the hypo/epi parametrics with pen wobble (`rho = d + wob·sin(wf·ta)`) and optional spin (`θ = spin·ta`). `ptBoth` returns the main and the twin points and shares the trig work.
+- `tCur` is the angle along the curve (wraps at `tMax`). `tAbs` is the unwrapped stroke time that drives the wobble and spin phase, so they stay continuous across wraps.
+- Closure: `tMax() = 2π · r/gcd(R, r)` with rounded inputs.
+- `strokeSeg(t0, t1)` walks the arc with adaptive steps (`0.05 / max(1, |k/r|)`) and chunks polylines by color delta. `strokeChunk` draws N kaleidoscope copies (canvas rotation; odd slices flipped) for the main and twin pens. `strokeLine` puts the glow pass on the glow layer and the core pass on the ink layer (both `lighter` composite).
+- `computeFit()` runs at stroke time (in `strokeSeg`). It scales `|k| + d + wob` (plus stroke and glow margin) to 44.5% of the smaller stage dimension, so the art never overflows the viewport.
 
-### Controls & state
-`S` holds everything; UI ids are short (`R r d wob wf mirror spin sp w hs g ms
-td gd` sliders; `fade fglow keep morph twin c2` toggles; `ca cb` color pickers;
-`mode` segment). Every control carries a `title` tooltip explaining what it
-does (fields/switch labels carry it; lock buttons override with theirs). Panel
-layout: docked 320px left on desktop (`body.panel-hidden` slides it;
-`ResizeObserver` on `#stage` re-centers), floating overlay below 720px.
-Keyboard: `Space R M C L H`.
+**Modes (branches of the frame loop)**
 
-**Locks (🔒):** `locks` Set keyed by control id; hover-revealed padlock buttons
-(`.lock[data-lock]`); `isLocked()` gates **Random** and **Auto-morph drift**.
-Every control is lockable — sliders, mode, color pair, and the engine toggles
-(fade/fglow/keep/morph, which Random rolls with low odds ~10–35% when
-unlocked). Locks persist as `lk=a,b,c` in the URL hash. Locks protect from the
-*machine* only: users can always toggle/move a locked control by hand.
+- **strict** (default): stops at `tMax`, badge "complete". ⏩ Finish calls `fastForward()`.
+- **fade** (`S.fade`): wraps forever. Ink decays toward the background with `decayAlpha(dt, S.trailDur)`: exponential and wall-time based, so a segment is invisible (1/255) exactly `trailDur` seconds after it was drawn.
+- **fadeGlow** (`S.fadeGlow`): the glow layer dissolves on its own clock (`decayAlpha(dt, S.glowDur)`) and the ink stays. Completes normally in strict mode, and keeps dissolving after it is done.
+- **keep** (`S.keep`, free draw): parameter changes never clear the canvas. The pen continues from `lastPt` with a connector line (`pendingConnect`). `paramSeq` and `lastWrapSeq` detect a re-traced closed curve and stop, to prevent additive blow-out.
+- **morph** (`S.morph`): `morphStep()` drifts R, r and d with sine LFOs and noise (respects locks). Behaves like keep (endless). Sliders sync about 15 times per second.
+- The stat line (`statText`, `updateStat`) and the progress bar show "lap x / N · closes in ~N".
 
-### URL hash = full shareable state
+**Controls and state**
+
+`S` holds all state. Slider ids: `R r d wob wf mirror spin sp w hs g ms td gd`. Toggles: `fade fglow keep morph twin c2`. Color pickers: `ca cb`. Segment: `mode`. The panel is docked 320px left on desktop (`body.panel-hidden` slides it; a `ResizeObserver` on `#stage` re-centers) and floats as an overlay below 720px. Keyboard: `Space R M C L H`.
+
+**Locks (🔒):** the `locks` Set is keyed by control id. Padlock buttons (`.lock[data-lock]`) show on hover. `isLocked()` gates **Random** and **Auto-morph drift**. Random rolls the engine toggles (fade, fglow, keep, morph) with low odds (about 10-35%) when they are not locked. Locks persist as `lk=a,b,c` in the URL hash.
+
+**URL hash = full shareable state**
+
 `#m=&R=&r=&d=&wob=&wf=&mir=&sn=&sp=&w=&hs=&g=&ms=&td=&gd=&h=&f=&fg=&k=&mo=&tw=&c2=&ca=&cb=&lk=`
-(`pushHash` debounced 400ms; 🔗 Link button / `L` copies). `loadHash()` parses
-with hex validation for colors and converts legacy `fd=` (per-frame fade %)
-into an equivalent `trailDur` seconds.
 
-## Gotchas we already hit — do not regress
-1. **Canvas is a replaced element**: `inset: 0` alone sizes it to its
-   *intrinsic* (dpr-multiplied) size → overflow on scaled displays. Canvases
-   must have explicit CSS `width/height: 100%`.
-2. The view transform must be recomputed at stroke time, not only on param change.
-3. `gcd()` must receive integers (morph floats) — see rounding in `tMax()`.
-4. Wobble/spin phases live on `tAbs`, never on wrapped `tCur` (wrap seams).
-5. The mode segment click handler must match `button[data-mode]` (lock buttons
-   live inside it).
-6. Clicking a `.lock` inside a `<label class="switch">` needs
-   `preventDefault()` or it toggles the checkbox.
-7. The panel is compact by design (grid2 rows, hidden-until-live fields
-   `#msField`/`#tdField`/`#gdField`, thin scrollbar) — keep it fitting ~660px height.
-8. Fade trails must never set `done`; the keep-mode stop only applies when
-   neither fade nor morph is on.
-9. Exports must composite all three layers (screenshots without glow surprised
-   us once).
-10. Fade mode must NOT `restart()` on geometry changes (`onShapeChanged` early
-    return) — wiping every slider step kills the comet look; the self-erasing
-    canvas heals any mismatch within `trailDur` seconds.
-11. Trail/glow fading is time-based (`decayAlpha`), never per-frame-percent —
-    it must look identical at 30, 60 or 144 fps.
+`pushHash` is debounced 400ms. The 🔗 Link button (or `L`) copies the URL. `loadHash()` validates hex colors and converts the legacy `fd=` (per-frame fade %) into an equivalent `trailDur` in seconds.
 
-## Conventions
-- Keep it **one file**; no frameworks, no build, no dependencies.
-- Commit style: short imperative subject + explanatory bullets; stay coherent
-  with the existing banner-comment sections.
-- `gh` CLI auth is broken on the dev machine (WSL2); repo metadata changes use
-  `curl` + a classic PAT (`repo` scope) against `api.github.com`.
-- Git push over SSH works via `asus_tuf_ed25519` (ssh-agent must hold it;
-  `~/.ssh/config` pins it for `github.com` with `IdentitiesOnly`).
+## Repo map updates
 
-## Roadmap / open items
-- [x] Locks for the engine toggles (fade, fade glow, free draw, auto-morph)
-- [ ] Zoom & pan; custom presets (localStorage); dashed/pulse pens
+Whenever a substantial code modification has been implemented, or an outdated repo map is detected while exploring the codebase, edit the repo map for review. Put the repo map edit in its own final commit, so it does not hide the real change.
+
+## Commands
+
+```
+xdg-open index.html        # run: open the file, or serve it with python3 -m http.server
+node scripts/smoke.js      # headless behavior tests; run after every change to the script
+```
+
+There is no install, build or lint step.
+
+## Search scope
+
+None. `.opencode/` holds local OpenCode state and is gitignored.
+
+## Gotchas
+
+1. The three canvases need explicit CSS `width/height: 100%`. `inset: 0` alone sizes a canvas to its dpr-multiplied intrinsic size and overflows on scaled displays.
+2. The view transform must be recomputed at stroke time (`computeFit()` in `strokeSeg`), not only on a parameter change.
+3. `gcd()` must get integers: morph makes fractional values, and a raw gcd of floats recurses forever. See the rounding in `tMax()`.
+4. Wobble and spin phases use `tAbs`, never the wrapped `tCur`, or the wraps show seams.
+5. The click handler of the mode segment must match `button[data-mode]`, because lock buttons live inside the segment.
+6. A click on a `.lock` inside a `<label class="switch">` needs `preventDefault()`, or it toggles the checkbox.
+7. The panel is compact by design (grid2 rows, fields hidden until live: `#msField`, `#tdField`, `#gdField`, thin scrollbar). Keep it inside about 660px of height.
+8. Fade trails must never set `done`. The keep-mode stop applies only when neither fade nor morph is on.
+9. Exports must composite all three layers. A PNG without the glow layer looks wrong.
+10. Fade mode must not `restart()` on geometry changes (early return in `onShapeChanged`). A restart on every slider step kills the comet look, and the self-erasing canvas heals any mismatch within `trailDur` seconds.
+11. Trail and glow fading use `decayAlpha` (wall time), never a per-frame percent.
+
+## Open items
+
+- [ ] Zoom and pan; custom presets (localStorage); dashed and pulse pens
 - [ ] SVG export; "harmonic" second-epicycle pen
-- [ ] GitHub Pages + repo description/topics (curl commands known)
+- [ ] Repo description and topics on GitHub
