@@ -4,3 +4,7 @@
 # OS noise
 .DS_Store
 Thumbs.db
+
+# local agent tooling (shared skills, Claude Code settings)
+.agents/
+.claude/
